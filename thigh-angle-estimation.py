@@ -22,7 +22,8 @@ from sklearn.gaussian_process.kernels import RBF
 #Fourier Regression
 from symfit import parameters, variables, sin, cos, Fit
 
-def fourier_series (x,f,n=0):
+#Ref:https://stackoverflow.com/questions/52524919/fourier-series-fit-in-python
+def fourier_series (x,y,f,n=0):
     """
     Returns a symbolic fourier series of order `n`.
 
@@ -33,11 +34,16 @@ def fourier_series (x,f,n=0):
     #Make the paremeter objects for all the terms
     a0, *cos_a=parameters(','.join(['a{}'.format(i) for i in range(0,n+1)]))
     sin_b = parameters(','.join(['b{}'.format(i) for i in range(1, n + 1)]))
+    c0, *cos_c=parameters(','.join(['c{}'.format(i) for i in range(0,n+1)]))
+    sin_d = parameters(','.join(['d{}'.format(i) for i in range(1, n + 1)]))
     # Construct the series???
     series = a0 + sum(ai*cos(i*f*x)+bi*sin(i*f*x) for i, (ai, bi) in enumerate(zip(cos_a, sin_b), start=1))
+    series += c0*y + sum(y*ci*cos(i*f*x)+y*di*sin(i*f*x) for i, (ci, di) in enumerate(zip(cos_c, sin_d), start=1))
     return series
 
 #Performing the PCA
+from sklearn.decomposition import PCA
+
 
 #%% This section is dedicated to getting the data
 
@@ -59,74 +65,123 @@ left_hip = raw_walking_data['Gaitcycle']['AB01']['s0x8i10']\
                             ['kinematics']['jointangles']['left']['hip']['x']
 
 
-#Flatten the list so that we have all the data in one axis
+#Set a dictionary to store all the fitting parameters per the different runs
+parameters_per_walk_config=[]
+parameter_list=[]
+header= ['a0','a1','a2','a3','b1','b2','b3','w']
 
 
-#%% This section is dedicated to setting up the data
-
-#Lets set up an X axis that will serve as our phase variable phi
-#> Well use a linspace to setup a linear interpolation from 0-1
-#> 150 samples will be used since that is the amount of samples taken per step
-phi = np.linspace(0,1,150)
-
-#This has the amounts of step data per person
-amount_of_steps=left_hip.shape[0]
-
-
-#This variable will store all the runs for one person in a flattened np array
-left_hip_total = np.empty((0,0))
-phi_total=np.empty((0,0))
-
-
-#This will plot every step in term of the phase variable phi
-#> H5py datasets iterate over the first axis which makes this very easy
-for step in left_hip:
-    plt.plot(phi,step)
-    np.append(left_hip_total,step)
-    np.append(phi_total,phi)
-    pass
+for trial in raw_walking_data['Gaitcycle']['AB01'].keys():
     
-#Set the labels for the axis
-plt.ylabel('Left hip angle')
-plt.xlabel('Phase variable phi')
+    if trial == 'subjectdetails':
+        continue          
+    
+    left_hip = raw_walking_data['Gaitcycle']['AB01'][trial]\
+                        ['kinematics']['jointangles']['left']['hip']['x']
+    
+    
+    time_info = raw_walking_data['Gaitcycle']['AB01'][trial]\
+                         ['cycles']['left']['time']
+                         
+                         
+    #Reading the walking speed from the h5py file is cryptic
+    #so I am hacking a method by reading the name
+    if('s0x8' in trial):
+        walking_speed=0.8
+    elif('s1x2' in trial):
+        walking_speed=1.2
+    elif('s1' in trial):
+        walking_speed=1
+    else:
+        raise ValueError("You dont have the speed on the name")
+                        
+    #%% This section is dedicated to setting up the data
+    
+    
+    #The amount of datapoints we have per step
+    datapoints=150
+    
+    #Amount of model parameters. Total parameters are 4n+2
+    num_params=3
+    
+    #Lets set up an X axis that will serve as our phase variable phi
+    phi = np.linspace(0,1,datapoints)
+    
+    #This has the amounts of step data per person
+    amount_of_steps=left_hip.shape[0]
+    
+    #This variable will store all the runs for one person in a flattened np array
+    left_hip_total=np.array(left_hip)
+    phi_total=np.repeat(phi.reshape(1,150),amount_of_steps,axis=0)
+    step_length_total=np.empty((amount_of_steps,datapoints))
+       
+    #Build the dataset for the regression model based on all the steps
+    #for a given walking configuration
+    for step in range(left_hip.shape[0]):
 
-#Plot it
-#plt.show
-
-
-
-
-# This section is dedicated to regression based on fourier series
-#This is mostly from: https://stackoverflow.com/questions/52524919/fourier-series-fit-in-python
-
-
- 
-x, y = variables('x, y')
-w, = parameters('w')
-model_dict = {y: fourier_series(x, f=w, n=3)}
-
-fit = Fit(model_dict, x=phi, y=left_hip[0])
-fit_result = fit.execute()
-
-print(fit_result)
-
-# Plot the result
-#plt.plot(phi, left_hip[0])
-plt.plot(phi, fit.model(x=phi, **fit_result.params).y, color='green', ls=':')
-
-
+        #Calculate the step length for the given walking config
+        #Get delta time of step
+        delta_time=time_info[step][149]-time_info[step][0]
+        #Set the steplength for the 
+        step_length_total[step]= np.full((150,),walking_speed*delta_time)
+    
+    
+    # This section is dedicated to regression based on fourier series
+    #This is mostly from: https://stackoverflow.com/questions/52524919/fourier-series-fit-in-python
+    
+    x, y, z = variables('x, y, z')
+    w, = parameters('w')
+    model_dict = {z: fourier_series(x, y, f=w, n=num_params)}
+    
+    fit = Fit(model_dict, x=phi_total, y=step_length_total, z=left_hip_total)
+    fit_result = fit.execute()
+        
+    print(fit_result)
+    
+    #Plot the result
+    plt.plot(phi, left_hip[0])
+    plt.plot(phi, fit.model(x=phi, y=step_length_total[0],
+                            **fit_result.params).z, color='green', ls=':')
+    plt.show
+    
+    parameters_per_walk_config += [fit_result.params.copy()]
+    parameter_list += fit_result.params.copy().values()
+    
+    
+    #parameters_per_walk_config[-1]['walking_config'] = walking_configuration
+    
 #%% This section is dedicated to PCA on the coefficients for the fourier 
 ### transform
 
+# amount_of_walking_configurations=len(raw_walking_data['Gaitcycle']['AB01'])-1
+
+
+# np_parameters = np.array(parameter_list)\
+#     .reshape(amount_of_walking_configurations,4*num_params+3)
+# np_parameters-= np.mean(np_parameters)
+# np_parameters/= np.std(np_parameters)
+
+
+# #Ref:https://jakevdp.github.io/PythonDataScienceHandbook/05.09-principal-component-analysis.html
+# pca=PCA(n_components=3)
+
+# pca.fit(np_parameters)
+
+# fourier_paramaters_pca = pca.transform(np_parameters)
 
 
 
+# import plotly.express as px
+# import plotly.io as pio
+# pio.renderers.default = "browser"
 
-
-
-
-
-
+# fig = px.scatter_3d(x=fourier_paramaters_pca[:,0], 
+#                     y=fourier_paramaters_pca[:,1],
+#                     z=fourier_paramaters_pca[:,2],
+#                     labels={'x':'PCA 1',
+#                            'y':'PCA 2',
+#                            'z':'PCA 3'})
+# fig.show()
 
 
 
