@@ -8,8 +8,10 @@ Created on Wed Sep  2 21:16:47 2020
 
 #%% Imports and setup
 
-#Getting data from dataset
-import h5py
+#My own janky imports
+from generators import *
+
+
 
 #General Purpose and plotting
 import matplotlib.pyplot as plt
@@ -45,87 +47,32 @@ def fourier_series (x,y,f,n=0):
 from sklearn.decomposition import PCA
 
 
-#%% This section is dedicated to getting the data
 
-#Set a reference to where the dataset is located
-dataset_location = 'local-storage/'
-#Reference to the raw data filename
-filename = 'InclineExperiment.mat'
-
-#Import the raw data from the walking database 
-#> README for the dataset can be found in 
-#> https://ieee-dataport.org/open-access/
-#> effect-walking-incline-and-speed-human-leg-kinematics-kinetics-and-emg
-raw_walking_data = h5py.File(dataset_location+filename, 'r')
+#Paint the lines with corresponding colors
+colors=['blue','green','red','cyan','magenta','yellow','black','white']
+color_index=0
 
 
-#Getting the subject info to play around with h5py dataset
-#This will provide the each trial of walking, Subject 1 has 39 steps
-left_hip = raw_walking_data['Gaitcycle']['AB01']['s0x8i10']\
-                            ['kinematics']['jointangles']['left']['hip']['x']
 
-
-#Set a dictionary to store all the fitting parameters per the different runs
-parameters_per_walk_config=[]
-parameter_list=[]
-header= ['a0','a1','a2','a3','b1','b2','b3','w']
-
-
-for trial in raw_walking_data['Gaitcycle']['AB01'].keys():
+#The amount of datapoints we have per step
+datapoints=150
     
-    if trial == 'subjectdetails':
-        continue          
+#Amount of model parameters. Total parameters are 4n+2
+num_params=8
+
+
+
+
+#Iterate through all the trials for a test subject
+for subject in raw_walking_data['Gaitcycle'].keys():
     
-    left_hip = raw_walking_data['Gaitcycle']['AB01'][trial]\
-                        ['kinematics']['jointangles']['left']['hip']['x']
-    
-    
-    time_info = raw_walking_data['Gaitcycle']['AB01'][trial]\
-                         ['cycles']['left']['time']
-                         
-                         
-    #Reading the walking speed from the h5py file is cryptic
-    #so I am hacking a method by reading the name
-    if('s0x8' in trial):
-        walking_speed=0.8
-    elif('s1x2' in trial):
-        walking_speed=1.2
-    elif('s1' in trial):
-        walking_speed=1
-    else:
-        raise ValueError("You dont have the speed on the name")
-                        
+    print("Doing subject: " + subject)
     #%% This section is dedicated to setting up the data
+    left_hip_total=get_trials_in_numpy(subject)
+    phi_total=get_phi_from_numpy(left_hip_total)
+    step_length_total=get_step_length(subject)   
     
-    
-    #The amount of datapoints we have per step
-    datapoints=150
-    
-    #Amount of model parameters. Total parameters are 4n+2
-    num_params=3
-    
-    #Lets set up an X axis that will serve as our phase variable phi
-    phi = np.linspace(0,1,datapoints)
-    
-    #This has the amounts of step data per person
-    amount_of_steps=left_hip.shape[0]
-    
-    #This variable will store all the runs for one person in a flattened np array
-    left_hip_total=np.array(left_hip)
-    phi_total=np.repeat(phi.reshape(1,150),amount_of_steps,axis=0)
-    step_length_total=np.empty((amount_of_steps,datapoints))
-       
-    #Build the dataset for the regression model based on all the steps
-    #for a given walking configuration
-    for step in range(left_hip.shape[0]):
-
-        #Calculate the step length for the given walking config
-        #Get delta time of step
-        delta_time=time_info[step][149]-time_info[step][0]
-        #Set the steplength for the 
-        step_length_total[step]= np.full((150,),walking_speed*delta_time)
-    
-    
+    print("Got data for: " + subject)
     # This section is dedicated to regression based on fourier series
     #This is mostly from: https://stackoverflow.com/questions/52524919/fourier-series-fit-in-python
     
@@ -139,9 +86,10 @@ for trial in raw_walking_data['Gaitcycle']['AB01'].keys():
     print(fit_result)
     
     #Plot the result
-    plt.plot(phi, left_hip[0])
-    plt.plot(phi, fit.model(x=phi, y=step_length_total[0],
-                            **fit_result.params).z, color='green', ls=':')
+    plt.plot(phi_total[0], left_hip_total[0], color=colors[color_index])
+    plt.plot(phi_total[0], fit.model(x=phi_total[0], y=step_length_total[0],
+                            **fit_result.params).z, color=colors[color_index], ls=':')
+    color_index=(color_index+1)%len(colors)
     plt.show
     
     parameters_per_walk_config += [fit_result.params.copy()]
@@ -153,35 +101,39 @@ for trial in raw_walking_data['Gaitcycle']['AB01'].keys():
 #%% This section is dedicated to PCA on the coefficients for the fourier 
 ### transform
 
-# amount_of_walking_configurations=len(raw_walking_data['Gaitcycle']['AB01'])-1
+
+#We need the amount of subjects to reshape the parameter matrix
+amount_of_subjects=len(raw_walking_data['Gaitcycle'].keys())
+
+#Create the parameter matrix based on the coefficients for all the models
+np_parameters = np.array(parameter_list).reshape(amount_of_subjects,4*num_params+3)
+
+#Normalize by substracting the mean and dividing by the variance
+#TODO - verify if this is going this row weise
+np_parameters -= np.mean(np_parameters)
+np_parameters /= np.std(np_parameters)
 
 
-# np_parameters = np.array(parameter_list)\
-#     .reshape(amount_of_walking_configurations,4*num_params+3)
-# np_parameters-= np.mean(np_parameters)
-# np_parameters/= np.std(np_parameters)
+#Ref:https://jakevdp.github.io/PythonDataScienceHandbook/05.09-principal-component-analysis.html
+pca=PCA(n_components=3)
 
+pca.fit(np_parameters)
 
-# #Ref:https://jakevdp.github.io/PythonDataScienceHandbook/05.09-principal-component-analysis.html
-# pca=PCA(n_components=3)
-
-# pca.fit(np_parameters)
-
-# fourier_paramaters_pca = pca.transform(np_parameters)
+fourier_paramaters_pca = pca.transform(np_parameters)
 
 
 
-# import plotly.express as px
-# import plotly.io as pio
-# pio.renderers.default = "browser"
+import plotly.express as px
+import plotly.io as pio
+pio.renderers.default = "browser"
 
-# fig = px.scatter_3d(x=fourier_paramaters_pca[:,0], 
-#                     y=fourier_paramaters_pca[:,1],
-#                     z=fourier_paramaters_pca[:,2],
-#                     labels={'x':'PCA 1',
-#                            'y':'PCA 2',
-#                            'z':'PCA 3'})
-# fig.show()
+fig = px.scatter_3d(x=fourier_paramaters_pca[:,0], 
+                    y=fourier_paramaters_pca[:,1],
+                    z=fourier_paramaters_pca[:,2],
+                    labels={'x':'PCA 1',
+                            'y':'PCA 2',
+                            'z':'PCA 3'})
+fig.show()
 
 
 
@@ -220,3 +172,10 @@ for trial in raw_walking_data['Gaitcycle']['AB01'].keys():
 
 
 
+
+
+
+
+
+#Change model fitting to grays algorithm
+#Visualizations
