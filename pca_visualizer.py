@@ -16,7 +16,7 @@ import numpy as np
 
 from sklearn.decomposition import PCA
 
-
+import math
 
 from fourier_calculations import get_fourier_prediction
 
@@ -31,8 +31,11 @@ server = app.server
 #Load the numpy array from memory that contains the fourier coefficients
 np_parameters = np.load('fourier coefficient matrix.npy')
 
+default_fourier_parameters=np_parameters.shape[1]
 
-pca=PCA(n_components=3)
+n_pca_components=min(np_parameters.shape)
+
+pca=PCA(n_components=n_pca_components)
 
 pca.fit(np_parameters)
 
@@ -41,6 +44,32 @@ fourier_paramaters_pca = pca.transform(np_parameters)
 
 def update_variance_graph():
  	return px.line(np.cumsum(pca.explained_variance_ratio_))
+
+
+pca_sliders=[]
+
+pca_sliders=[dcc.Slider(
+							#name='Step length (meters)',
+							id='step-length',
+							min=0,
+							max=2,
+							step=0.01,
+							marks={i: str(i/10) for i in range(21)},
+							value = 1
+						)]
+
+for i in range(n_pca_components):
+	pca_sliders+= [dcc.Slider(
+							#name='PCA axis '+str(i),
+							id='pca'+str(i),
+							min=-pca.explained_variance_[i],
+							max=pca.explained_variance_[i],
+							step=pca.explained_variance_[i]/100,
+							marks={i: str(i) for i in range(-math.floor(pca.explained_variance_[i]),math.floor(pca.explained_variance_[i])+10,10)},
+							value = 0
+						)]
+
+
 
 
 
@@ -92,55 +121,7 @@ app.layout = html.Div(children=[
             
 
 				html.Div(className='row', children=[
-                    drc.Card([
-                        dcc.Input(
-                            placeholder='Enter the amount of PCA axis...',
-                            type='number',
-                            value=3)
-                    ]),
-                    
-                    drc.Card([     
-						drc.NamedSlider(
-							name='PCA axis 1',
-							id='pca1',
-							min=-50,
-							max=50,
-							step=1,
-							marks={i: str(i) for i in range(-50,60,10)},
-							value = 0
-						),
-
-						drc.NamedSlider(
-								name='PCA axis 2',
-								id='pca2',
-								min=-50,
-								max=50,
-								step=1,
-								marks={i: str(i) for i in range(-50,60,10)},
-								value = 0
-						),
-
-						drc.NamedSlider(
-							name='PCA axis 3',
-							id='pca3',
-							min=-50,
-							max=50,
-							step=1,
-							marks={i: str(i) for i in range(-50,60,10)},
-							value = 0
-						),
-
-
-						drc.NamedSlider(
-							name='Step length (meters)',
-							id='step-length',
-							min=0,
-							max=2,
-							step=0.01,
-							marks={i: str(i/10) for i in range(21)},
-							value = 1
-						)
-					])
+                    drc.Card(pca_sliders)
 				])
 			])
 		])
