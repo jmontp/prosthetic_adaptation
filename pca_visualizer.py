@@ -38,6 +38,9 @@ print("ξₐᵥ=", np.mean(Ξ, axis=0))
 Ξ0 = Ξ - np.mean(Ξ, axis=0)
 print("Ξ0", Ξ0)
 
+Σ = Ξ0.T @ Ξ0 / (Ξ0.shape[0]-1)
+
+
 
 default_fourier_parameters=Ξ.shape[1]
 
