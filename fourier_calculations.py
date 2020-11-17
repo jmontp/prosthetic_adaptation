@@ -16,7 +16,7 @@ def get_fourier_coeff (x,y,z,n=0):
         R.append(step_length*np.sin(i*phi))
     R = np.array(R).T
         
-    return np.linalg.solve(R.T @ R, R.T @ left_hip_angle)
+    return np.linalg.solve(R.T @ R, R.T @ left_hip_angle), R
  
     
 

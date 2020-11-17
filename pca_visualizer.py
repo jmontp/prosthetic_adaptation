@@ -30,6 +30,35 @@ server = app.server
 
 #Load the numpy array from memory that contains the fourier coefficients
 Ξ = np.load('fourier coefficient matrix.npy')
+G = np.load('lambda Gram matrix.npy')
+
+print("G", G)
+eig, V = np.linalg.eigh(G)
+
+print(eig.shape)
+print(V.shape)
+print((V.T @ np.diagflat(eig) @ V).shape)
+assert(np.linalg.norm(G-G.T)<1e-7)
+for e in eig:
+	assert (e>=0)
+	assert( e>0) # pd
+print(np.linalg.norm(G - V @ np.diagflat(eig) @ V.T)) # good
+print(np.linalg.norm(G - V.T @ np.diagflat(eig) @ V)) # false
+print(np.linalg.norm(G - sum([V[:,[i]]@ V[:,[i]].T * eig[i] for i in range(len(eig))]))) # good
+print(np.linalg.norm(G)) # false
+
+Q = sum([V[:,[i]]@ V[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig))])
+Qinv = sum([V[:,[i]]@ V[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
+# Q G Q = I
+
+# G = sum ( R_p.T @ R_p)
+# prime G = I = Q G Q = sum (Q @ R_p.T @ R_p @ Q)
+# Lambda_hat(x) = Lambda(x) @ Q
+# theta = Lambda(x) * ξ  = Lambda_hat(x) [Q^{-1} ξ]
+
+# assert that G = V (eig) V.T
+assert(np.linalg.norm(G - V @ np.diagflat(eig) @ V.T)< 1e-7 * np.linalg.norm(G)) # passes
+
 # what is this matrix?
 	# the matrix is literally \Xi
 print(Ξ.shape) # (10, 45)
@@ -37,6 +66,10 @@ print(Ξ.shape) # (10, 45)
 print("ξₐᵥ=", np.mean(Ξ, axis=0))
 Ξ0 = Ξ - np.mean(Ξ, axis=0)
 print("Ξ0", Ξ0)
+
+Ξ0prime = Qinv @ Ξ0 @ Qinv # basically done!
+
+
 
 Σ = Ξ0.T @ Ξ0 / (Ξ0.shape[0]-1)
 

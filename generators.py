@@ -27,7 +27,7 @@ import numpy as np
 #%% This section is dedicated to getting the data
 
 #Set a reference to where the dataset is located
-dataset_location = 'local-storage/'
+dataset_location = '../'
 #Reference to the raw data filename
 filename = 'InclineExperiment.mat'
 

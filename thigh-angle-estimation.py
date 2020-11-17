@@ -27,7 +27,7 @@ import h5py
 from fourier_calculations import get_fourier_prediction, get_fourier_coeff
 
 #Set a reference to where the dataset is located
-dataset_location = 'local-storage/'
+dataset_location = '../'
 #Reference to the raw data filename
 filename = 'InclineExperiment.mat'
 
@@ -57,6 +57,10 @@ num_params=12
 #The list of all the fourier coefficients per patient
 parameter_list=[]
 
+G_total = 0
+N_total = 0
+
+
 #Iterate through all the trials for a test subject
 for subject in raw_walking_data['Gaitcycle'].keys():
     
@@ -69,7 +73,9 @@ for subject in raw_walking_data['Gaitcycle'].keys():
     print("Got data for: " + subject)
     # This section is dedicated to regression based on fourier series
     #This is mostly from: https://stackoverflow.com/questions/52524919/fourier-series-fit-in-python
-    fourier_coeff = get_fourier_coeff(phi_total,step_length_total,left_hip_total,num_params)
+    fourier_coeff, R_p = get_fourier_coeff(phi_total,step_length_total,left_hip_total,num_params)
+    G_total += R_p.T @ R_p
+    N_total += R_p.shape[0]
     y_pred = get_fourier_prediction(fourier_coeff, phi_total[0], step_length_total.mean(0),num_params)
     
     #Plot the result
@@ -82,6 +88,8 @@ for subject in raw_walking_data['Gaitcycle'].keys():
     color_index=(color_index+1)%len(colors)
     parameter_list.append(fourier_coeff)
 
+G = G_total/N_total
+
 fig.show()
 
 
@@ -92,9 +100,10 @@ amount_of_subjects=len(raw_walking_data['Gaitcycle'].keys())
 np_parameters = np.array(parameter_list).reshape(amount_of_subjects,4*num_params-3)
 
 #Save the information offline so that we do not have to recalculate every time
-np.save('fourier coefficient matrix',np_parameters)
+np.save('fourier coefficient matrix', np_parameters)
+np.save('lambda Gram matrix', G)
 
-
+exit()
 #%% This section is dedicated to PCA on the coefficients for the fourier 
 ### transform
 #Performing the PCA
