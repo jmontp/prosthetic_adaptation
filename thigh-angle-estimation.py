@@ -88,6 +88,7 @@ for subject in raw_walking_data['Gaitcycle'].keys():
     color_index=(color_index+1)%len(colors)
     parameter_list.append(fourier_coeff)
 
+#This is equation eq:inner_regressor in the paper!
 G = G_total/N_total
 
 fig.show()
