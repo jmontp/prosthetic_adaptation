@@ -117,7 +117,7 @@ pca_input_list=[Input('pca'+str(i),'value') for i in range(η)]
 
 
 def update_variance_graph():
- 	return px.line(y=np.cumsum(np.flip(ψs[-η-1:-1]))/sum(ψs), x=np.linspace(1,η,η), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
+ 	return px.line(y=np.cumsum([0]+list(np.flip(ψs[-η:])/sum(ψs))), x=range(η+1), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
 
 
 pca_sliders=[]
