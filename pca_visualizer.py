@@ -123,6 +123,7 @@ def update_variance_graph():
 pca_sliders=[]
 
 marker_step = 20
+marker_min = 0
 marker_range = 2
 slider_marks1 = {int(i/marker_step):str(int(i/marker_step)) for i in range(-marker_range*marker_step, (marker_range+1)*marker_step,marker_step)}
 print(slider_marks1)
@@ -131,9 +132,9 @@ print(slider_marks1)
 pca_sliders=[drc.NamedSlider(
 							name='Step length (meters)',
 							id='step-length',
-							min=0,
-							max=marker_range,
-							step=marker_range/marker_step,
+							min=.8,
+							max=1.2,
+							step=.4/marker_step,
 							marks=slider_marks1,
 							value = 1
 						)]
