@@ -32,19 +32,24 @@ server = app.server
 Ξ = np.load('fourier coefficient matrix.npy')
 G = np.load('lambda Gram matrix.npy')	
 
-# print("G", G)
+#Verify that the G matrix is at least positive semidefinite
+#To be psd or pd, G=G^T
+assert(np.linalg.norm(G-G.T)<1e-7)
+
+
+
+#Diagonalize the matrix G as G = OVO
 eig, O = np.linalg.eigh(G)
 V = np.diagflat(eig)
 
-# print(eig.shape)
-# print(O.shape)
-# print((O.T @ V @ O).shape)
-assert(np.linalg.norm(G-G.T)<1e-7)
+
+#Additionally, all the eigenvalues are true
 for e in eig:
 	assert (e>=0)
 	assert( e>0) # pd
 
-
+# Verify that it diagonalized correctly G = O (eig) O.T
+assert(np.linalg.norm(G - O @ V @ O.T)< 1e-7 * np.linalg.norm(G)) # passes
 # print(np.linalg.norm(G - O @ V @ O.T)) # good
 # print(np.linalg.norm(G - O.T @ V @ O)) # false
 # print(np.linalg.norm(G - sum([O[:,[i]]@ O[:,[i]].T * eig[i] for i in range(len(eig))]))) # good
@@ -53,29 +58,28 @@ for e in eig:
 
 
 #This is based on the equation in eq:Qdef
-Q = sum([O[:,[i]] @ O[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig))])
-Qinv = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
 # Q G Q = I
+Q       = sum([O[:,[i]] @ O[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig))])
+Qinv    = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
 
+
+# IF we had to calculate G by hand:
 # G = sum ( R_p.T @ R_p)
 # prime G = I = Q G Q = sum (Q @ R_p.T @ R_p @ Q)
 # Lambda_hat(x) = Lambda(x) @ Q
 # theta = Lambda(x) * ξ  = Lambda_hat(x) [Q^{-1} ξ]
 
-# assert that G = O (eig) O.T
-assert(np.linalg.norm(G - O @ V @ O.T)< 1e-7 * np.linalg.norm(G)) # passes
 
-# what is this matrix?
-	# the matrix is literally \Xi
-# print(Ξ.shape) # (10, 45)
 
 #print("ξₐᵥ=", np.mean(Ξ, axis=0))
 ξ_avg = np.mean(Ξ, axis=0)
+
+#Substract the average row
 Ξ0 = Ξ - ξ_avg
-#print("Ξ0", Ξ0)
 
+#Calculate the coefficients in the orthonormal space
 
-Ξ0prime = Ξ0 @ Q.T # basically done!
+Ξ0prime = Ξ0 @ Qinv
 
 
 Σ = Ξ0prime.T @ Ξ0prime / (Ξ0prime.shape[0]-1)
@@ -117,7 +121,7 @@ pca_input_list=[Input('pca'+str(i),'value') for i in range(η)]
 
 
 def update_variance_graph():
- 	return px.line(y=np.cumsum(np.flip(ψs[-η-1:-1]))/sum(ψs), x=np.linspace(1,η,η), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
+ 	return px.line(y=np.cumsum(np.flip(ψs[-η:]))/sum(ψs), x=np.linspace(1,η,η), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
 
 
 pca_sliders=[]
