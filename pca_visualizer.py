@@ -121,12 +121,13 @@ pca_input_list=[Input('pca'+str(i),'value') for i in range(η)]
 
 
 def update_variance_graph():
- 	return px.line(y=np.cumsum(np.flip(ψs[-η:]))/sum(ψs), x=np.linspace(1,η,η), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
+ 	return px.line(y=np.cumsum([0]+list(np.flip(ψs[-η:])/sum(ψs))), x=range(η+1), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
 
 
 pca_sliders=[]
 
 marker_step = 20
+marker_min = 0
 marker_range = 2
 slider_marks1 = {int(i/marker_step):str(int(i/marker_step)) for i in range(-marker_range*marker_step, (marker_range+1)*marker_step,marker_step)}
 print(slider_marks1)
@@ -135,9 +136,9 @@ print(slider_marks1)
 pca_sliders=[drc.NamedSlider(
 							name='Step length (meters)',
 							id='step-length',
-							min=0,
-							max=marker_range,
-							step=marker_range/marker_step,
+							min=.8,
+							max=1.2,
+							step=.4/marker_step,
 							marks=slider_marks1,
 							value = 1
 						)]
