@@ -28,8 +28,8 @@ from fourier_calculations import get_fourier_prediction
 app = dash.Dash(__name__)
 server = app.server
 
-#Here comes the logic
-
+#Setup the Required Math
+#--------------------------------------------------------------------------
 #Load the numpy array from memory that contains the fourier coefficients
 Ξ = np.load('fourier coefficient matrix.npy')
 G = np.load('lambda Gram matrix.npy')	
@@ -65,6 +65,16 @@ Q       = sum([O[:,[i]] @ O[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig)
 Qinv    = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
 
 
+#Change of basis conversions
+def param_to_orthonormal(ξ):
+	return Qinv @ ξ
+
+def param_from_orthonormal(ξ):
+	return Q @ ξ
+
+def matrix_to_orthonormal(Ξ):
+	return Ξ @ Qinv
+
 # IF we had to calculate G by hand:
 # G = sum ( R_p.T @ R_p)
 # prime G = I = Q G Q = sum (Q @ R_p.T @ R_p @ Q)
@@ -73,22 +83,28 @@ Qinv    = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))]
 
 
 
-#print("ξₐᵥ=", np.mean(Ξ, axis=0))
 ξ_avg = np.mean(Ξ, axis=0)
 
 #Substract the average row
 Ξ0 = Ξ - ξ_avg
 
 #Calculate the coefficients in the orthonormal space
+Ξ0prime = matrix_to_orthonormal(Ξ0)
 
-Ξ0prime = Ξ0 @ Qinv
+#The following two lines show incorrect conversions
+#Ξ0prime = Qinv @ Ξ0 
+#This is incorrect since Ξ is matrix version of ξ that is transposed
+#Ξ0prime = Ξ0 @ Q
+#This is incorrect since prime is in the orthonormal space
 
 
+#Get the covariance matrix for this
 Σ = Ξ0prime.T @ Ξ0prime / (Ξ0prime.shape[0]-1)
 
+
+#Calculate the eigendecomposition of the covariance matrix
 ψinverted, Uinverted = np.linalg.eigh(Σ)
-#Eigenvalues are received from smalles to bigger, make it bigger 
-#to smaller
+#Eigenvalues are received from smalles to bigger, make it bigger to smaller
 ψs = np.flip(ψinverted)
 Ψ = np.diagflat(ψs)
 #If we change the eigenvalues we also need to change the eigenvectors
@@ -106,7 +122,9 @@ ss = []
 
 #Convert from the new basis back to the original basis vectors
 for i in range (0,η):
-	ss.append(Qinv @ (U[:,i]*np.sqrt(ψs[i])))
+	ss.append(param_from_orthonormal(U[:,i]*np.sqrt(ψs[i])))
+	#ss.append(param_from_orthonormal(U[:,i]))
+
 	# print("At i = {}".format(i))
 	# print("Shape of the Si is")
 	# print(ss[i-1].shape)
@@ -137,32 +155,44 @@ step_length_array=np.full((150,),1)
 for i in range(num_params):
     ξtest = np.zeros(num_params)
     ξtest[i] = 1
-    test_deviation_function = get_fourier_prediction(Qinv @ ξtest,
-    											phi,
-    											step_length_array,
-    											12)
+    ξtest_converted = param_from_orthonormal(ξtest)
+    # test_deviation_function = get_fourier_prediction(param_from_orthonormal(ξtest),
+    # 											phi,
+    # 											step_length_array,
+    # 											12)
+    test_deviation_function = get_fourier_prediction(ξtest_converted,
+     												 phi,
+     												 step_length_array,
+     												 12)
+    print(str(test_deviation_function.size))
     test_rmse = np.sqrt(np.mean(np.square(test_deviation_function)))
     print(ξtest)
     print(test_rmse)
     #assert(1-1e-3 < abs(test_rmse) < 1+1e-3)
 
+#--------------------------------------------------------------------------
 
 
+
+#Setup the visualization
+#--------------------------------------------------------------------------
+
+#Define an axis for every pca axis that we have up to η
 pca_input_list=[Input('pca'+str(i),'value') for i in range(η)]
 
 
+#Update the cummulative variance graph, should only run once
 def update_variance_graph():
  	return px.line(y=np.cumsum([0]+list((ψs[0:η])/sum(ψs))), x=range(η+1), title='Cumulative Sum of variance', labels={'x': 'pca axis', 'y': 'percentage of variance covered'})
 
 
+#Configure the sliders for step length
 pca_sliders=[]
-
 marker_step = 6
 marker_min = 0.8
 marker_range = 1.2
-
 slider_marks1 = {i: "{0:.2f}".format(i) for i in np.append([0],np.linspace(marker_min, marker_range, num=marker_step))}
-print(slider_marks1)
+#print(slider_marks1)
 
 
 pca_sliders=[drc.NamedSlider(
@@ -175,11 +205,11 @@ pca_sliders=[drc.NamedSlider(
 							value = 1
 						)]
 
-
+#Configure the sliders for the pca axis
 marker_step = 6
 marker_range = 3
 slider_marks2 = {i: str(i) for i in range(-marker_range, marker_range)}
-print(slider_marks2)
+#print(slider_marks2)
 
 
 for i in range(η):
@@ -194,7 +224,7 @@ for i in range(η):
 						)]
 
 
-
+#This is where we configure the look of the site
 #Going to copy the container layout from https://github.com/plotly/dash-svm
 
 app.layout = html.Div(children=[
@@ -262,6 +292,7 @@ def update_pca_graph(step_length, *pca_argv):
     phi=np.linspace(0,1,150)#.reshape(1,150)
     step_length_array=np.full((150,),step_length)
     
+    #This is the current value of the data that we have stored
     num_params=12
        
     #Get the axis for the first three pca vectors

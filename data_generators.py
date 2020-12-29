@@ -50,14 +50,6 @@ parameter_list=[]
 
 
 
-
-
-
-### Fine then, you have been warned
-
-
-
-
 #This will return a concatenated array with all the trials for a subject
 def get_trials_in_numpy(subject):
     #This retruns the numpy array that has all the trials.
@@ -65,7 +57,7 @@ def get_trials_in_numpy(subject):
     return np.concatenate(list(hip_angle_generator(subject)),axis=0)
 
 #This will return a corresponding axis for the data in the model
-def get_phi_from_numpy(array):
+def get_phase_from_numpy(array):
     #This retruns the numpy array that has all the axis.
     #This essentially hides the ugly generator call
     return np.concatenate(list(phi_generator(array.shape[0],150)),axis=0)
@@ -75,6 +67,18 @@ def get_step_length(subject):
     #This retruns the numpy array that has all the step lengths
     #This essentially hides the ugly generator call
     return np.concatenate(list(step_length_generator(subject)),axis=0)
+
+
+def get_ramp(subject):
+    #This retruns the numpy array that has all the step lengths
+    #This essentially hides the ugly generator call
+    return np.concatenate(list(ramp_generator(subject)),axis=0)
+
+def get_phase_dot(subject):
+    #This retruns the numpy array that has all the step lengths
+    #This essentially hides the ugly generator call
+    return np.concatenate(list(phase_dot_generator(subject)),axis=0)
+
 
 
 #This will generate the angles 
@@ -100,16 +104,10 @@ def step_length_generator(subject):
         if trial == 'subjectdetails':
             continue
         
-        #Reading the walking speed from the h5py file is cryptic
-        #so I am hacking a method by reading the name
-        if('s0x8' in trial):
-            walking_speed=0.8
-        elif('s1x2' in trial):
-            walking_speed=1.2
-        elif('s1' in trial):
-            walking_speed=1
-        else:
-            raise ValueError("You dont have the speed on the name")  
+        #Get the h5py object pointer for the walking speed
+        ptr = raw_walking_data['Gaitcycle'][subject][trial]['description'][1][0]
+
+        walking_speed = raw_walking_data[ptr]
         
         time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
        
@@ -120,11 +118,43 @@ def step_length_generator(subject):
             #Set the steplength for the 
             yield np.full((1,150),walking_speed*delta_time)
         
+
+
+def ramp_generator(subject):       
+ for trial in raw_walking_data['Gaitcycle'][subject].keys():
+    if trial == 'subjectdetails':
+        continue
+    
+    #Get the h5py object pointer for the walking speed
+    ptr = raw_walking_data['Gaitcycle'][subject][trial]['description'][1][1]
+
+    ramp = raw_walking_data[ptr]
+
+    time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
+   
+    for step in time_info:        
+        yield np.full((1,150),ramp)
+
+def phase_dot_generator(subject):
+    for trial in raw_walking_data['Gaitcycle'][subject].keys():
+        if trial == 'subjectdetails':
+            continue
         
+        #Get the h5py object pointer for the walking speed
+        time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
         
-if __name__ == '__main__':
-    test1=get_step_length('AB01')
-    test2=get_step_length('AB02')
-    test3=get_step_length('AB01')
-    test3=get_step_length('AB02')
+        phase_step = 1/150
+
+        for step in time_info:        
+            #Calculate the step length for the given walking config
+            #Get delta time of step
+            delta_time=step[1]-step[0]
+            #Set the steplength for the 
+            yield np.full((1,150),phase_step/delta_time)
+        
+#if __name__ == '__main__':
+#    test1=get_step_length('AB01')
+#    test2=get_step_length('AB02')
+#    test3=get_step_length('AB01')
+#    test3=get_step_length('AB02')
     
