@@ -1,0 +1,4 @@
+polynomial_basis,2,phase_dot
+polynomial_basis,2,ramp
+polynomial_basis,2,step_length
+fourier_basis,8,phase

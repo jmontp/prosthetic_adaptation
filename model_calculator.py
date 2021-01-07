@@ -10,7 +10,7 @@ Created on Wed Sep  2 21:16:47 2020
 
 #My own janky imports
 from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp
-from model_generator import fourier_series, polynomial_function, kronecker_generator, least_squares, model_prediction
+from model_generator import fourier_basis, polynomial_basis, kronecker_generator, least_squares, model_prediction, model_saver
 #General Purpose and plotting
 import plotly.express as px
 import plotly.graph_objs as go
@@ -19,7 +19,8 @@ pio.renderers.default = "browser"
 import numpy as np
 #To get the data
 import h5py
-
+#To get command line arguments
+import sys
 
 ##Import data
 #Set a reference to where the dataset is located
@@ -51,19 +52,19 @@ colors=['black','green','red','cyan','magenta','yellow','black','white',
 color_index=0
 
 ##Create the model
-phase_model = (fourier_series, 8)
-phase_dot_model = (fourier_series, 2)
-ramp_model = (polynomial_function, 2)
-step_length_model = (polynomial_function, 3)
-model,_ = kronecker_generator(phase_model, phase_dot_model, ramp_model, step_length_model)
+phase_model = fourier_basis(8,'phase')
+phase_dot_model = polynomial_basis(2, 'phase_dot')
+ramp_model = polynomial_basis(2, 'ramp')
+step_length_model = polynomial_basis(2,'step_length')
+model = kronecker_generator(phase_dot_model, ramp_model, step_length_model,phase_model)
 
 
 ##Calculate a model per subject
 #Iterate through all the trials for a test subject
 for subject in raw_walking_data['Gaitcycle'].keys():
     
-    if(subject != "AB01"):
-        continue
+    # if(subject != "AB01"):
+    #     continue
   
     #Get the data for the subject
     print("Doing subject: " + subject)
@@ -76,11 +77,12 @@ for subject in raw_walking_data['Gaitcycle'].keys():
 
   
     #Fit the model for the person
-    ξ, R_p = least_squares(model, left_hip_angle.ravel(), phases.ravel(), phase_dots.ravel(), ramps.ravel(), step_lengths.ravel())
+    ξ, R_p = least_squares(model, left_hip_angle.ravel(), phase_dots.ravel(), ramps.ravel(), step_lengths.ravel(),phases.ravel())
     G_total += R_p.T @ R_p
     N_total += R_p.shape[0]
+    print("The parameter vector is" + str(ξ))
+    print("The size of the parameter vector is: " + str(ξ.shape))
 
-  
     #Predict the average line 
     draw_left_hip_angle = left_hip_angle.mean(0)
     draw_phases = phases[0]
@@ -88,7 +90,7 @@ for subject in raw_walking_data['Gaitcycle'].keys():
     draw_ramps = ramps.mean(0)
     draw_steps = step_lengths.mean(0)
     #Get prediction
-    y_pred = model_prediction(model, ξ, draw_phases.ravel(), draw_phase_dots.ravel(), draw_ramps.ravel(), draw_steps.ravel())
+    y_pred = model_prediction(model, ξ, draw_phase_dots.ravel(), draw_ramps.ravel(), draw_steps.ravel(),draw_phases.ravel())
   
 
     #Plot the result
@@ -113,8 +115,18 @@ fig.show()
 amount_of_subjects=len(raw_walking_data['Gaitcycle'].keys())
 
 #Create the parameter matrix based on the coefficients for all the models
-np_parameters = np.array(parameter_list).reshape(amount_of_subjects,4*num_params-3)
+np_parameters = np.array(parameter_list).reshape(amount_of_subjects,model.size)
 
 #Save the information offline so that we do not have to recalculate every time
 np.save('UM - fourier coefficient matrix', np_parameters)
 np.save('UM - lambda Gram matrix', G)
+
+
+
+#Verify what file we are going to name it as
+if(len(sys.argv)>2):
+    filename = sys.argv[1]
+else:
+    filename = 'most_recent_model.csv'
+
+model_saver(filename, model)

@@ -12,15 +12,20 @@ import utils.dash_reusable_components as drc
 from dash.dependencies import Input,Output,State
 import plotly.express as px
 import pandas as pd
-
-
 import numpy as np
-
 from sklearn.decomposition import PCA
-
 import math
+import sys
+from model_generator import model_loader, model_prediction
 
-from fourier_calculations import get_fourier_prediction
+#Import the model
+if(len(sys.argv)>2):
+    filename = sys.argv[1]
+else:
+    filename = 'most_recent_model.csv'
+
+model = model_loader(filename)
+
 
 
 
@@ -31,8 +36,9 @@ server = app.server
 #Setup the Required Math
 #--------------------------------------------------------------------------
 #Load the numpy array from memory that contains the fourier coefficients
-Ξ = np.load('fourier coefficient matrix.npy')
-G = np.load('lambda Gram matrix.npy')	
+Ξ = np.load('UM - fourier coefficient matrix.npy')
+print("Ξ shape is" + str(Ξ.shape))
+G = np.load('UM - lambda Gram matrix.npy')	
 
 #Verify that the G matrix is at least positive semidefinite
 #To be psd or pd, G=G^T
@@ -156,18 +162,11 @@ for i in range(num_params):
     ξtest = np.zeros(num_params)
     ξtest[i] = 1
     ξtest_converted = param_from_orthonormal(ξtest)
-    # test_deviation_function = get_fourier_prediction(param_from_orthonormal(ξtest),
-    # 											phi,
-    # 											step_length_array,
-    # 											12)
-    test_deviation_function = get_fourier_prediction(ξtest_converted,
-     												 phi,
-     												 step_length_array,
-     												 12)
-    print(str(test_deviation_function.size))
+    test_deviation_function = model(ξtest_converted,phi,step_length_array)
+    #print(str(test_deviation_function.size))
     test_rmse = np.sqrt(np.mean(np.square(test_deviation_function)))
-    print(ξtest)
-    print(test_rmse)
+    #print(ξtest)
+    #print(test_rmse)
     #assert(1-1e-3 < abs(test_rmse) < 1+1e-3)
 
 #--------------------------------------------------------------------------
@@ -195,7 +194,7 @@ slider_marks1 = {i: "{0:.2f}".format(i) for i in np.append([0],np.linspace(marke
 #print(slider_marks1)
 
 
-pca_sliders=[drc.NamedSlider(
+pca_sliders+=[drc.NamedSlider(
 							name='Step length (meters)',
 							id='step-length',
 							min=.8,
@@ -205,11 +204,47 @@ pca_sliders=[drc.NamedSlider(
 							value = 1
 						)]
 
+#Configure the sliders for phase dot
+marker_steps = 10
+marker_min = 0.2
+marker_max = 2
+slider_marks2 = {i: "{0:.2f}".format(i) for i in np.append([0],np.linspace(marker_min, marker_max, num=marker_steps))}
+#print(slider_marks2)
+
+
+pca_sliders+=[drc.NamedSlider(
+                            name='Phase Dot (steps/sec)',
+                            id='phase-dot',
+                            min=marker_min,
+                            max=marker_max,
+                            step=(marker_max-marker_min)/marker_steps,
+                            marks=slider_marks2,
+                            value = 1
+                        )]
+
+#Configure the sliders for ramp angle
+marker_steps = 10
+marker_min = -8
+marker_max = 8
+slider_marks3 = {i: "{0:.2f}".format(i) for i in np.append([0],np.linspace(marker_min, marker_max, num=marker_steps))}
+#print(slider_marks3)
+
+
+pca_sliders+=[drc.NamedSlider(
+                            name='Ramp Angle (angle)',
+                            id='ramp',
+                            min=marker_min,
+                            max=marker_max,
+                            step=(marker_max-marker_min)/marker_steps,
+                            marks=slider_marks3,
+                            value = 0
+                        )]
+
 #Configure the sliders for the pca axis
 marker_step = 6
 marker_range = 3
-slider_marks2 = {i: str(i) for i in range(-marker_range, marker_range)}
-#print(slider_marks2)
+slider_marks4 = {i: str(i) for i in range(-marker_range, marker_range)}
+#print(slider_marks4)
 
 
 for i in range(η):
@@ -219,7 +254,7 @@ for i in range(η):
 							min=-marker_range,
 							max=marker_range,
 							step=2*marker_range/marker_step,
-							marks=slider_marks2,
+							marks=slider_marks4,
 							value = 0
 						)]
 
@@ -284,16 +319,18 @@ app.layout = html.Div(children=[
 #This is the callback that updates the graphs
 @app.callback(Output('graph-fourier-pca', 'figure'),
 			 [Input('step-length', 'value'),
+              Input('phase-dot','value'),
+              Input('ramp','value'),
 			  *pca_input_list])
-def update_pca_graph(step_length, *pca_argv):
+def update_pca_graph(step_length, phase_dot, ramp_angle, *pca_argv):
 
     
     #Recreate the phi and step length inputs
-    phi=np.linspace(0,1,150)#.reshape(1,150)
+    phi=np.linspace(0,1,150)
     step_length_array=np.full((150,),step_length)
-    
-    #This is the current value of the data that we have stored
-    num_params=12
+    phase_dot_array = np.full((150,),phase_dot)
+    ramp_angle_array = np.full((150,), ramp_angle)
+
        
     #Get the axis for the first three pca vectors
     parameter_tuples = zip(ss,pca_argv)
@@ -305,15 +342,26 @@ def update_pca_graph(step_length, *pca_argv):
     #Calculate the deviation from the average basis vector
     deviation_from_average = sum([pca_axis*pca_slider_value for pca_axis,pca_slider_value in parameter_tuples])
 
-    average_function = get_fourier_prediction(ξ_avg,
-    										  phi,
-    										  step_length_array,
-    										  num_params)
+    print("ξ average shape is " + str(ξ_avg.shape))
+    print("Deviation shape is " + str(deviation_from_average.shape))
+    print("The model size is "+ str(model.size))
 
-    deviation_function = get_fourier_prediction(deviation_from_average,
-    											phi,
-    											step_length_array,
-    											num_params)
+    average_function = model_prediction(model,
+                                        ξ_avg,
+    									phase_dot_array,
+                                        ramp_angle_array,
+                                        step_length_array,
+                                        phi)
+
+
+
+
+    deviation_function = model_prediction(model,
+                                        deviation_from_average,
+    									phase_dot_array,
+                                        ramp_angle_array,
+    									step_length_array,
+                                        phi)
 
     rmse = np.sqrt(np.mean(np.square(deviation_function)))
 
