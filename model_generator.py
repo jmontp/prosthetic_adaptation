@@ -56,20 +56,33 @@ def fourier_basis(n,var_name):
 #func_tuples - tuple with a function basis as the first entry and the amount of entries in that function 
 def kronecker_generator(*funcs):
 
+	#Get the description string of the model
 	model_description = model_descriptor(*funcs)
 	
+	#Calculate the size of the parameter array
+	#Additionally, allocate arrays to speed up performance
+	alocation_buff = []
+	size = 1;
+	for func in funcs:
+		# #Skip the first function 
+		# #since we need two sizes to create a buffer
+		# if(size != 1):
+		#Since we multiply left to right, the total size will be on the left 
+		#and the size for the new row will be on the right
+		print((str(size), str(func.size)))
+		alocation_buff.append(np.zeros((size, func.size)))
+
+		size = size * func.size
+
 	#This will calculate the kronecker product based on the basis functions that are passed in 
 	def kronecker_builder(*function_inputs):
 		result = np.array([1])
-		for values in zip(function_inputs,funcs):
-			curr_val,curr_func = values
-			result = np.kron(result,curr_func(curr_val))
+		for values in zip(function_inputs,funcs,alocation_buff):
+			curr_val, curr_func, curr_buf = values
+			result = fast_kronecker(result,curr_func(curr_val), curr_buf)
 		return result
 
-	#This will serve as the list of input array
-	size = 1;
-	for func in funcs:
-		size = size * func.size
+	
 
 	kronecker_builder.size = size
 	kronecker_builder.model_description = model_description
@@ -122,6 +135,18 @@ def least_squares(model, output, *data):
 def model_prediction(model, parameters, *data):
 	model_output = [model(*entry) @ parameters for entry in zip(*data)]
 	return np.array(model_output)
+
+
+def fast_kronecker(a,b,buff=None):
+	#If you pass the buffer is the fast implementation
+	#139 secs with 1 parameter fit
+	if(buff is not None):
+		return np.outer(a,b,buff).ravel().copy()
+
+	#Else use the default implementation
+	#276.738 secs with 1 param
+	else:
+		return np.kron(a,b)
 
 
 ##################################
