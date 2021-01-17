@@ -38,10 +38,9 @@ filename = 'InclineExperiment.mat'
 raw_walking_data = h5py.File(dataset_location+filename, 'r')
 
 
-#Getting the subject info to play around with h5py dataset
-#This will provide the each trial of walking, Subject 1 has 39 steps
-left_hip = raw_walking_data['Gaitcycle']['AB01']['s0x8i10']\
-                            ['kinematics']['jointangles']['left']['hip']['x']
+#Example of the structure
+#left_hip = raw_walking_data['Gaitcycle']['AB01']['s0x8i10']\
+#                            ['kinematics']['jointangles']['left']['hip']['x']
 
 
 #Set a dictionary to store all the fitting parameters per the different runs
@@ -51,10 +50,10 @@ parameter_list=[]
 
 
 #This will return a concatenated array with all the trials for a subject
-def get_trials_in_numpy(subject):
+def get_trials_in_numpy(subject,joint):
     #This retruns the numpy array that has all the trials.
     #This essentially hides the ugly generator call
-    return np.concatenate(list(hip_angle_generator(subject)),axis=0)
+    return np.concatenate(list(joint_angle_generator(subject,joint)),axis=0)
 
 #This will return a corresponding axis for the data in the model
 def get_phase_from_numpy(array):
@@ -82,14 +81,27 @@ def get_phase_dot(subject):
 
 
 #This will generate the angles 
-def hip_angle_generator(subject):
+def joint_angle_generator(subject,joint,left=True,right=True):
     #Get all the trials
     for trial in raw_walking_data['Gaitcycle'][subject].keys():
         #Dont care about the subject details
         if trial == 'subjectdetails':
             continue
         #Return the numpy array for the trial
-        yield raw_walking_data['Gaitcycle'][subject][trial]['kinematics']['jointangles']['left']['hip']['x'][:]
+        #Verify whether we want left or right
+        #By default it gets both
+        if(left == True):
+            yield raw_walking_data['Gaitcycle'][subject][trial]['kinematics']['jointangles']['left'][joint]['x'][:]
+     
+
+    for trial in raw_walking_data['Gaitcycle'][subject].keys():
+        #Dont care about the subject details
+        if trial == 'subjectdetails':
+            continue
+        #Return the numpy array for the trial
+        if(right == True):
+            yield raw_walking_data['Gaitcycle'][subject][trial]['kinematics']['jointangles']['right'][joint]['x'][:]
+
 
 #This will generate axis
 def phi_generator(n,length):
@@ -109,31 +121,61 @@ def step_length_generator(subject):
 
         walking_speed = raw_walking_data[ptr]
         
-        time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
-       
-        for step in time_info:        
+        time_info_left=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
+        
+        time_info_right=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['right']['time']
+
+        for step_left in time_info_left:
             #Calculate the step length for the given walking config
             #Get delta time of step
-            delta_time=step[149]-step[0]
+            delta_time_left=step_left[149]-step_left[0]
             #Set the steplength for the 
-            yield np.full((1,150),walking_speed*delta_time)
+            yield np.full((1,150),walking_speed*delta_time_left)
+
+        for step_right in time_info_right:
+
+            #Get delta time of step
+            delta_time_right=step_right[149]-step_right[0]
+            #Set the steplength for the 
+            yield np.full((1,150),walking_speed*delta_time_right)
         
 
 
 def ramp_generator(subject):       
- for trial in raw_walking_data['Gaitcycle'][subject].keys():
-    if trial == 'subjectdetails':
-        continue
-    
-    #Get the h5py object pointer for the walking speed
-    ptr = raw_walking_data['Gaitcycle'][subject][trial]['description'][1][1]
+    #Generate for the left leg
+    for trial in raw_walking_data['Gaitcycle'][subject].keys():
+        if trial == 'subjectdetails':
+            continue
+        
+        #Get the h5py object pointer for the walking speed
+        ptr = raw_walking_data['Gaitcycle'][subject][trial]['description'][1][1]
+        ramp = raw_walking_data[ptr]
 
-    ramp = raw_walking_data[ptr]
+        #This just gets the amount of ramps you need per step
+        time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
+       
+        for step in time_info:        
+            #Yield for the left leg
+            yield np.full((1,150),ramp)
+            #Yield for the right leg
 
-    time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
-   
-    for step in time_info:        
-        yield np.full((1,150),ramp)
+    #Generate for the right leg
+    for trial in raw_walking_data['Gaitcycle'][subject].keys():
+        if trial == 'subjectdetails':
+            continue
+        
+        #Get the h5py object pointer for the walking speed
+        ptr = raw_walking_data['Gaitcycle'][subject][trial]['description'][1][1]
+        ramp = raw_walking_data[ptr]
+
+        #This just gets the amount of ramps you need per step
+        time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['right']['time']
+       
+        for step in time_info:        
+            #Yield for the left leg
+            yield np.full((1,150),ramp)
+            #Yield for the right leg
+
 
 def phase_dot_generator(subject):
     for trial in raw_walking_data['Gaitcycle'][subject].keys():
@@ -141,16 +183,25 @@ def phase_dot_generator(subject):
             continue
         
         #Get the h5py object pointer for the walking speed
-        time_info=raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
-        
+        time_info_left= raw_walking_data['Gaitcycle'][subject][trial]['cycles']['left']['time']
+        time_info_right = raw_walking_data['Gaitcycle'][subject][trial]['cycles']['right']['time']
         phase_step = 1/150
 
-        for step in time_info:        
+        for step_left in time_info_left:        
             #Calculate the step length for the given walking config
             #Get delta time of step
-            delta_time=step[1]-step[0]
+            delta_time_left=step_left[1]-step_left[0]
             #Set the steplength for the 
-            yield np.full((1,150),phase_step/delta_time)
+            yield np.full((1,150),phase_step/delta_time_left)
+
+        for step_right in time_info_right:        
+
+            #Get delta time of step
+            delta_time_right=step_right[1]-step_right[0]
+            #Set the steplength for the 
+            yield np.full((1,150),phase_step/delta_time_right)
+
+
         
 #if __name__ == '__main__':
 #    test1=get_step_length('AB01')

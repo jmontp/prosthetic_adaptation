@@ -5,6 +5,14 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 
 
 """
+
+
+
+#H is the partial derivative of the model with respect to the state variables and the pca axis coefficient variables 
+#The partial derivative with respect to the state variable is the derivative of the function row for the row function vector for that particular state variable kroneckerd with he other normal funcitons
+#The partial derivative with respect to he pca axis is just the pca axis times the kronecker productl
+
+
 import numpy as np
 from math import comb
 
@@ -22,6 +30,22 @@ def polynomial_basis(n,var_name):
 	
 	return p_func
 
+#Return a polynomial basis function derivative with n members
+def polynomial_derivative(n):
+
+	def p_der(x):
+		basis = [i*x**(i-1) for i in range(0,n)]
+		return np.array(basis)
+
+	p_der.parent_function = 'polynomial_derivative'
+	p_der.size = n
+	p_der.params = n
+	p_der.variable_name = var_name + "_derivative"
+
+	
+	return p_der
+
+
 def berstein_basis(n,var_name):
 
 	def b_func(x):
@@ -35,6 +59,7 @@ def berstein_basis(n,var_name):
 
 
 	return b_func
+
 
 def fourier_basis(n,var_name):
 
@@ -50,6 +75,39 @@ def fourier_basis(n,var_name):
 	f_func.variable_name = var_name
 
 	return f_func
+
+def fourier_derivative(n,var_name):
+
+	def f_der(x):
+		basis_m = [[-2*np.pi*i*np.sin(2*np.pi*i*x), 2*np.pi*i*np.cos(2*np.pi*i*x)] for i in range(1,n)]
+		basis_f = np.array(basis_m).flatten()
+		basis = np.insert(basis_f,0,0)
+		return basis
+
+	f_der.parent_function = 'fourier_derivative'
+	f_der.params = n
+	f_der.size = 2*n-1
+	f_der.variable_name = var_name + "_derivative"
+
+	return f_der
+
+
+
+def basis_derivative(func):
+	if (func.parent_function == 'polynomial_basis'):
+		return polynomial_derivative(func.params, func.variable_name)
+	elif (func.parent_function == 'fourier_basis'):
+		return fourier_derivative(func.params, func.variable_name)
+
+def model_partial_derivative(model,partial_variable_name):
+	new_model = []
+	for entry in model.funcs:
+		if (entry.variable_name == partial_variable_name):
+			new_model.append(basis_derivative(entry))
+		else:
+			new_model.append(entry)
+
+	return kronecker_generator(*new_model)
 
 
 #This function will return a Kronecker model of all the basis functions that are inputed
@@ -86,6 +144,7 @@ def kronecker_generator(*funcs):
 
 	kronecker_builder.size = size
 	kronecker_builder.model_description = model_description
+	kronecker_builder.funcs = funcs
 
 
 	return kronecker_builder
@@ -118,15 +177,31 @@ def model_loader(filename):
 
 #Calculate the least squares based on the data
 def least_squares(model, output, *data):
-
-	#Calculate the regressor matrix as a python array
-	regressor_list = [model(*entry) for entry in zip(*data)]
-	#print(regressor_list)
-	#R is the regressor matrix
-	R = np.array(regressor_list)
-	#print(R)
 	
-	output = np.array(output)
+	#Get data size
+	rows = data[0].shape[0]
+	columns = model.size
+	buffer_shape = (rows, columns)
+
+	#Initialize a buffer array
+	regressor_matrix = np.zeros(buffer_shape)
+
+	#get data
+	zipped_data = zip(*data)
+
+	#Create the regressor matrix by evaluating the zipped data
+	counter = 0
+	for row in zip(*data):
+		regressor_matrix[counter,:] = model(*row)
+		counter = counter + 1
+
+	#Rename
+	R = regressor_matrix
+
+	#Only make it a np array if it isnt
+	if isinstance(output,(np.ndarray)):
+		output = np.array(output)
+
 
 	return np.linalg.solve(R.T @ R, R.T @ output), R
 

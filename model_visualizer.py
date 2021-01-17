@@ -16,7 +16,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 import math
 import sys
-from model_generator import model_loader, model_prediction
+from model_framekwork import model_loader, model_prediction
 
 #Import the model
 if(len(sys.argv)>2):
