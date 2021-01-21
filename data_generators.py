@@ -27,7 +27,7 @@ import numpy as np
 #%% This section is dedicated to getting the data
 
 #Set a reference to where the dataset is located
-dataset_location = '../'
+dataset_location = './local-storage/'
 #Reference to the raw data filename
 filename = 'InclineExperiment.mat'
 
@@ -46,6 +46,11 @@ raw_walking_data = h5py.File(dataset_location+filename, 'r')
 #Set a dictionary to store all the fitting parameters per the different runs
 parameters_per_walk_config=[]
 parameter_list=[]
+
+
+#This will return a list of the subjects names
+def get_subject_names():
+    return raw_walking_data['Gaitcycle'].keys()
 
 
 

@@ -6,11 +6,17 @@ Created on Wed Sep  2 21:16:47 2020
 @author: jose
 """
 
+#Todo: Update visualization to include the standard deviation at each point
+## do so by getting all the y values for each point in phase and then getting 
+## the predicted y and compraring to actual y
+
+
+
 #%% Imports and setup
 
 #My own janky imports
-from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp
-from model_framework import fourier_basis, polynomial_basis, kronecker_generator, least_squares, model_prediction, model_saver
+from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp, get_subject_names
+from model_framework import Fourier_Basis, Polynomial_Basis, Kronecker_Model, Measurement_Model, least_squares, model_prediction, model_saver, model_loader
 #General Purpose and plotting
 import plotly.express as px
 import plotly.graph_objs as go
@@ -23,25 +29,9 @@ import h5py
 import sys
 
 
-##Import data
-#Set a reference to where the dataset is located
-dataset_location = '../'
-#Reference to the raw data filename
-filename = 'InclineExperiment.mat'
-#Get the walking dataset
-raw_walking_data = h5py.File(dataset_location+filename, 'r')
+##Get the names of all the subjects
+subject_names = get_subject_names()
 
-
-
-#Change of basis conversions
-def param_to_orthonormal(ξ):
-    return Qinv @ ξ
-
-def param_from_orthonormal(ξ):
-    return Q @ ξ
-
-def matrix_to_orthonormal(Ξ):
-    return Ξ @ Qinv
 
 def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
 
@@ -67,7 +57,7 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
 
     ##Calculate a model per subject
     #Iterate through all the trials for a test subject
-    for subject in raw_walking_data['Gaitcycle'].keys():
+    for subject in subject_names:
    
         #Get the data for the subject
         print("Doing subject: " + subject)
@@ -113,7 +103,7 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
     G = G_total/N_total
 
     #We need the amount of subjects to reshape the parameter matrix
-    amount_of_subjects=len(raw_walking_data['Gaitcycle'].keys())
+    amount_of_subjects=len(subject_names)
 
     #Create the parameter matrix based on the coefficients for all the models
     Ξ = np.array(parameter_list).reshape(amount_of_subjects,model.size)
@@ -146,6 +136,15 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
     # Q G Q = I
     Q       = sum([O[:,[i]] @ O[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig))])
     Qinv    = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
+
+    #Change of basis conversions
+    def param_to_orthonormal(ξ):
+        return Qinv @ ξ
+    def param_from_orthonormal(ξ):
+        return Q @ ξ
+    def matrix_to_orthonormal(Ξ):
+        return Ξ @ Qinv
+
 
     #Get the average coefficients
     ξ_avg = np.mean(Ξ, axis=0)
@@ -193,59 +192,54 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
 #I think the outputs should be the model, the optimal parameters and the percentage of variation per parameter
 
 
-def H_generator(*models):
-    
-    def H_func(ξs,*inputs):
-        result = []
-        for model,ξ in zip(models,ξs):
-            result.append(model(*inputs)@ξ)
-        return np.array(result)
-
-    return 
-
-
-def dH_generator(*models):
-
-    def dH_func(ξs,*inputs):
-        result = []
-
-        for model,ξ in zip(models,ξs):
-            #Calculate a jacobean row in 
-            jacobean_row = [model_partial_derivative(model,func.variable_name)(*inputs)@ξ for func in model.funcs]
-            result.append(jacobean_row)
-
-        return np.array(result)
-
-    return dH
-
-
 if __name__=='__main__':
-    ##Create the model for the hip
-    phase_model = fourier_basis(1,'phase')
-    phase_dot_model = polynomial_basis(1, 'phase_dot')
-    ramp_model = polynomial_basis(1, 'ramp')
-    step_length_model = polynomial_basis(1,'step_length')
-    model_hip = kronecker_generator(phase_dot_model, ramp_model, step_length_model,phase_model)
 
-    ##Get the pca axis
-    pca_axis_hip, cumulative_variance = calculate_pca_axis(model_hip, 'hip')
+    if True:
+        ##Create the model for the hip
+        phase_model = Fourier_Basis(6,'phase')
+        phase_dot_model = Polynomial_Basis(1, 'phase_dot')
+        ramp_model = Polynomial_Basis(1, 'ramp')
+        step_length_model = Polynomial_Basis(1,'step_length')
+        
+        model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
 
+        ##Get the pca axis
+        pca_axis_hip, cumulative_variance = calculate_pca_axis(model_hip, 'hip')
 
-    ##Create the model for the ankle
-    phase_model = fourier_basis(1,'phase')
-    phase_dot_model = polynomial_basis(1, 'phase_dot')
-    ramp_model = polynomial_basis(1, 'ramp')
-    step_length_model = polynomial_basis(1,'step_length')
-    model_ankle = kronecker_generator(phase_dot_model, ramp_model, step_length_model,phase_model)
-
-    ##Get the pca axis
-    pca_axis_ankle, cumulative_variance = calculate_pca_axis(model_ankle, 'ankle')
-
-    H_func = H_generator((pca_axis_hip[0],pca_axis_ankle[0]),model_hip,model_ankle)
-
-    dH_func = dH_generator((pca_axis_hip[0],pca_axis_ankle[0]),model_hip,model_ankle
+        #Set the axis
+        model_hip.set_pca_axis(pca_axis_hip)
 
 
-    print(pca_axis)
-    print(cumulative_variance)
+        ##Create the model for the ankle
+        phase_model = Fourier_Basis(6,'phase')
+        phase_dot_model = Polynomial_Basis(1, 'phase_dot')
+        ramp_model = Polynomial_Basis(1, 'ramp')
+        step_length_model = Polynomial_Basis(1,'step_length')
+        model_ankle = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
+
+        ##Get the pca axis
+        pca_axis_ankle, cumulative_variance = calculate_pca_axis(model_ankle, 'ankle')
+
+        #Set the axis
+        model_ankle.set_pca_axis(pca_axis_ankle)
+
+        m_model = Measurement_Model(model_hip, model_ankle)
+
+        model_saver(m_model,'H_model.pickle')
+
+    else: 
+        m_model = model_loader('H_model.pickle')
+        coefficients = [1,1,1,1,1,1]
+        for func in m_model.models:
+            func.pca_coefficients = coefficients
+
+
+    h_eval = m_model.evalulate_H_func(1,2,3,4)
+    dh_eval = m_model.evaluate_dH_func(1,2,3,4)
+
+
+
+    print(h_eval)
+    print(dh_eval)
+
     print('done')

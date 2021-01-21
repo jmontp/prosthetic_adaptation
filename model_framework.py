@@ -6,50 +6,99 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 
 """
 
-
-
 #H is the partial derivative of the model with respect to the state variables and the pca axis coefficient variables 
 #The partial derivative with respect to the state variable is the derivative of the function row for the row function vector for that particular state variable kroneckerd with he other normal funcitons
 #The partial derivative with respect to he pca axis is just the pca axis times the kronecker productl
 
 
 import numpy as np
-from math import comb
-
-#Return a polynomial basis function with n members
-def polynomial_basis(n,var_name):
-	
-	def p_func(x):
-		basis = [x**i for i in range(0,n)]
-		return np.array(basis)
-
-	p_func.parent_function = 'polynomial_basis'
-	p_func.size = n
-	p_func.params = n
-	p_func.variable_name = var_name
-	
-	return p_func
-
-#Return a polynomial basis function derivative with n members
-def polynomial_derivative(n):
-
-	def p_der(x):
-		basis = [i*x**(i-1) for i in range(0,n)]
-		return np.array(basis)
-
-	p_der.parent_function = 'polynomial_derivative'
-	p_der.size = n
-	p_der.params = n
-	p_der.variable_name = var_name + "_derivative"
-
-	
-	return p_der
+import math
+import pickle
 
 
+
+
+#--------------------------
+#Need to create two objects:
+#Basis object:
+# basis(x): takes input and returns the value
+# basis_name:
+# basis size
+# basis params
+# variable name
+#Dont use basis directly, its just a blueprint to what you need to implement
+class Basis:
+	def __init__(self, n, var_name):
+		self.n = n
+		self.var_name = var_name
+
+	#Need to implement with other subclasses
+	def evaluate(self,x):
+		pass
+
+	#Need to implement the derivative of this also
+	def evaluate_derivative(self,x):
+		pass
+
+	def evaluate_conditional(self,x,apply_derivative):
+		if(apply_derivative == True):
+			return self.evaluate_derivative(x)
+		else:
+			return self.evaluate(x)
+
+
+##Define classes that will be used to calculate kronecker products in real time
+
+#This will create a Polynomial Basis with n entries
+# The variable name is also needed
+class Polynomial_Basis(Basis):
+	def __init__(self, n, var_name):
+		Basis.__init__(self,n,var_name)
+		self.size = n
+
+	#This function will evaluate the model at the given x value
+	def evaluate(self,x):
+		result = [math.pow(x,i) for i in range(0,self.n)]
+		return np.array(result)
+
+	#This function will evaluate the derivative of the model at the given 
+	# x value
+	def evaluate_derivative(self,x):
+		result = [i*math.pow(x,(i-1)) for i in range(0,self.n)]
+		return np.array(result)
+
+
+#This will create a Polynomial Basis with n harmonic frequencies
+# The variable name is also needed
+class Fourier_Basis(Basis):
+	def __init__(self, n, var_name):
+		Basis.__init__(self, n, var_name)
+		self.size = 2*n-1
+
+	#This function will evaluate the model at the given x value
+	def evaluate(self,x):
+		result = [1]
+		result += ([np.cos(2*np.pi*i*x) for i in range(1,self.n)])
+		result += ([np.sin(2*np.pi*i*x) for i in range(1,self.n)]) 
+		return np.array(result)
+
+
+	#This function will evaluate the derivative of the model at the given 
+	# x value
+	def evaluate_derivative(self,x):
+		result = [0]
+		result += ([-2*np.pi*i*np.sin(2*np.pi*i*x) for i in range(1,self.n)])
+		result += ([2*np.pi*i*np.cos(2*np.pi*i*x) for i in range(1,self.n)]) 
+		return np.array(result)
+
+
+
+#----------------------------------------
+#Not really using this right now so keeping in the old format
 def berstein_basis(n,var_name):
 
 	def b_func(x):
-		basis = [comb(n,i)*(1-x)**(n-i) for i in range(0,n+1)];
+		basis = [math.comb(n,i)*(1-x)**(n-i) for i in range(0,n+1)];
 		return np.array(basis)
 
 	b_func.parent_function = 'berstein_basis'
@@ -59,121 +108,119 @@ def berstein_basis(n,var_name):
 
 
 	return b_func
+#----------------------------------------
 
 
-def fourier_basis(n,var_name):
+#Model Object:
+# list of basis objects
+# string description
+# model_size
+# pca_axis - list of np array of model_size length
+# coefficient_list - list of coefficients for each pca_axis
+#--------------------------
+class Kronecker_Model:
+	def __init__(self, *funcs):
+		self.funcs = funcs
 
-	def f_func(x):
-		basis_m = [[np.cos(2*np.pi*i*x), np.sin(2*np.pi*i*x)] for i in range(1,n)]
-		basis_f = np.array(basis_m).flatten()
-		basis = np.insert(basis_f,0,1)
-		return basis
+		#Calculate the size of the parameter array
+		#Additionally, pre-allocate arrays for kronecker products intermediaries 
+		# to speed up results
+		self.alocation_buff = []
+		size = 1;
+		for func in funcs:
+			#Since we multiply left to right, the total size will be on the left 
+			#and the size for the new row will be on the right
+			print((str(size), str(func.size)))
+			self.alocation_buff.append(np.zeros((size, func.size)))
 
-	f_func.parent_function = 'fourier_basis'
-	f_func.params = n
-	f_func.size = 2*n-1
-	f_func.variable_name = var_name
+			size = size * func.size
 
-	return f_func
+		self.size = size
+		self.pca_axis = []
+		self.pca_coefficients = []
+        #Todo: Add average pca coefficient
+        
+    
+	#Evaluate the models at the function inputs that are received
+	#The function inputs are expected in the same order as they where defined
+	#Alternatively, you can also input a dictionary with the var_name as the key and the 
+	# value you want to evaluate the function as the value
+	def evaluate(self, *function_inputs,partial_derivative=None):
+		
+		#Verify that you have the correct input 
+		if(len(function_inputs) != len(self.funcs)):
+			err_string = 'Wrong amount of inputs. Received:'  + str(len(function_inputs)) + ', expected:' + str(len(self.funcs))
+			raise ValueError(err_string)
 
-def fourier_derivative(n,var_name):
+		#if(isinstance(function_inputs,dict) == False and isinstance(function_inputs,list) == False): 
+		#	raise TypeError("Only Lists and Dicts are supported, you used:" + str(type(function_inputs)))
 
-	def f_der(x):
-		basis_m = [[-2*np.pi*i*np.sin(2*np.pi*i*x), 2*np.pi*i*np.cos(2*np.pi*i*x)] for i in range(1,n)]
-		basis_f = np.array(basis_m).flatten()
-		basis = np.insert(basis_f,0,0)
-		return basis
+		#There are two behaviours: one for list and one for dictionary
+		#List expects the same order that you received it in
+		#Dictionary has key values for the function var names
 
-	f_der.parent_function = 'fourier_derivative'
-	f_der.params = n
-	f_der.size = 2*n-1
-	f_der.variable_name = var_name + "_derivative"
-
-	return f_der
-
-
-
-def basis_derivative(func):
-	if (func.parent_function == 'polynomial_basis'):
-		return polynomial_derivative(func.params, func.variable_name)
-	elif (func.parent_function == 'fourier_basis'):
-		return fourier_derivative(func.params, func.variable_name)
-
-def model_partial_derivative(model,partial_variable_name):
-	new_model = []
-	for entry in model.funcs:
-		if (entry.variable_name == partial_variable_name):
-			new_model.append(basis_derivative(entry))
-		else:
-			new_model.append(entry)
-
-	return kronecker_generator(*new_model)
-
-
-#This function will return a Kronecker model of all the basis functions that are inputed
-#func_tuples - tuple with a function basis as the first entry and the amount of entries in that function 
-def kronecker_generator(*funcs):
-
-	#Get the description string of the model
-	model_description = model_descriptor(*funcs)
-	
-	#Calculate the size of the parameter array
-	#Additionally, allocate arrays to speed up performance
-	alocation_buff = []
-	size = 1;
-	for func in funcs:
-		# #Skip the first function 
-		# #since we need two sizes to create a buffer
-		# if(size != 1):
-		#Since we multiply left to right, the total size will be on the left 
-		#and the size for the new row will be on the right
-		print((str(size), str(func.size)))
-		alocation_buff.append(np.zeros((size, func.size)))
-
-		size = size * func.size
-
-	#This will calculate the kronecker product based on the basis functions that are passed in 
-	def kronecker_builder(*function_inputs):
 		result = np.array([1])
-		for values in zip(function_inputs,funcs,alocation_buff):
+		#Assume that you get a list which means that everything is in order
+		for values in zip(function_inputs,self.funcs,self.alocation_buff):
 			curr_val, curr_func, curr_buf = values
-			result = fast_kronecker(result,curr_func(curr_val), curr_buf)
+			
+			#If you get a dictionary, then get the correct input for the function
+			if( isinstance(function_inputs,dict) == True):
+				#Get the value from the var_name in the dictionary
+				curr_val = function_inputs[curr_func.var_name]
+
+			#Verify if we want to take the partial derivative of this function
+			if(partial_derivative is not None and curr_func.var_name in partial_derivative):
+				apply_derivative = True
+			else: 
+				apply_derivative = False
+
+			#Since there isnt an implementation for doing kron in one shot, do it one by one
+			result = fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), curr_buf)
+
 		return result
 
-	
+	#Todo: Need to add functionality for the models pca_axis list
+	#Dont know if I want to have it run least squares in the initialization
+	def set_pca_axis(self,pca_axis):
+		self.pca_axis = pca_axis
+		self.pca_coefficients = [0]*len(self.pca_axis)
 
-	kronecker_builder.size = size
-	kronecker_builder.model_description = model_description
-	kronecker_builder.funcs = funcs
+	def set_pca_coefficients(self,pca_coefficients):
+		self.pca_coefficients = pca_coefficients
+
+	def sum_pca_axis(self):
+		return sum([axis*coeff for axis,coeff in zip(self.pca_axis,self.pca_coefficients)])
+
+	def evaluate_scalar_output(self,*function_inputs,partial_derivative=None):
+		return self.evaluate(*function_inputs,partial_derivative=partial_derivative) @ self.sum_pca_axis().T
 
 
-	return kronecker_builder
+#Evaluate model 
+def model_prediction(model,ξ,*input_list,partial_derivative=None):
+	result = [model.evaluate(*function_inputs,partial_derivative=partial_derivative)@ξ for function_inputs in zip(*input_list)]
+	return np.array(result)
 
-def model_descriptor(*funcs):
-	output = ''
 
-	for func in funcs:
-		basis_name = func.parent_function
-		basis_number = func.params
-		variable_name = func.variable_name
-		output+=basis_name+','+str(basis_number)+',' + variable_name +'\n'
+class Measurement_Model():
+	def __init__(self,*models):
+		self.models = models
 
-	return output
+	def evalulate_H_func(self,*inputs):
+		#get the output
+		result = [model.evaluate_scalar_output(*inputs) for model in self.models]
+		return np.array(result)
 
-def model_saver(filename,model):
-	with open('./'+filename, 'w') as file:
-		file.write(model.model_description)
-	
-def model_loader(filename):
-	func_list = [];
-	with open('./'+filename, 'r') as file:
-		lines = file.readlines()
-		for line in lines:
-			function, n, name = line.split(',')
-			func_list.append(globals()[function](int(n),name))
+	def evaluate_dH_func(self,*inputs):
+		result = []
+		for model in self.models:
+			state_derivatives = [model.evaluate_scalar_output(*inputs,partial_derivative=func.var_name) for func in model.funcs]
+			gait_fingerprint_derivatives = [model.evaluate(*inputs)@axis for axis in model.pca_axis]
+			total_derivatives = state_derivatives + gait_fingerprint_derivatives
+			result.append(total_derivatives)
 
-	print(func_list)
-	return kronecker_generator(*func_list)
+		return np.array(result)
+
 
 #Calculate the least squares based on the data
 def least_squares(model, output, *data):
@@ -186,13 +233,10 @@ def least_squares(model, output, *data):
 	#Initialize a buffer array
 	regressor_matrix = np.zeros(buffer_shape)
 
-	#get data
-	zipped_data = zip(*data)
-
 	#Create the regressor matrix by evaluating the zipped data
 	counter = 0
 	for row in zip(*data):
-		regressor_matrix[counter,:] = model(*row)
+		regressor_matrix[counter,:] = model.evaluate(*row)
 		counter = counter + 1
 
 	#Rename
@@ -202,15 +246,16 @@ def least_squares(model, output, *data):
 	if isinstance(output,(np.ndarray)):
 		output = np.array(output)
 
-
 	return np.linalg.solve(R.T @ R, R.T @ output), R
 
 
+def model_saver(model,filename):
+	with open(filename,'wb') as file:
+		pickle.dump(model,file)
 
-def model_prediction(model, parameters, *data):
-	model_output = [model(*entry) @ parameters for entry in zip(*data)]
-	return np.array(model_output)
-
+def model_loader(filename):
+	with open(filename,'rb') as file:
+		return pickle.load(file)
 
 def fast_kronecker(a,b,buff=None):
 	#If you pass the buffer is the fast implementation
@@ -224,9 +269,10 @@ def fast_kronecker(a,b,buff=None):
 		return np.kron(a,b)
 
 
-##################################
+####################################################################################
+#//////////////////////////////////////////////////////////////////////////////////#
+####################################################################################
 
-##################################
 #Test everything out
 def unit_test():
 
@@ -282,21 +328,77 @@ def numpy_testing():
 
 
 def least_squares_testing():
-	phase = [72,2,3]
-	ramp = [4,54,6]
+	phase = np.array([72,2,3])
+	ramp = np.array([4,54,6])
 
-	output = [1,2,3]
+	output = np.array([1,2,3])
 
-	phase_model = (polynomial_basis,2)
-	ramp_model = (polynomial_function, 2)
+	phase_model = Polynomial_Basis(2,'phase')
+	ramp_model = Polynomial_Basis(2,'ramp')
 
-	model, size = kronecker_generator(phase_model, ramp_model)
+	model = Kronecker_Model([phase_model, ramp_model])
 
 	xi, _ = least_squares(model, output, phase, ramp)
 
 	print(xi.shape)
 
+def object_testing():
+	phase = Fourier_Basis(5,'phase')
+	ramp = Polynomial_Basis(3,'ramp')
+
+	test_num = 2
+	phase_eval1 = phase.evaluate(test_num)
+
+	#save basis
+	save_file = 'test_file_saver.txt'
+	with open(save_file,'wb') as file:
+		pickle.dump(phase,file)
+
+	#load the basis
+	with open(save_file,'rb') as file:
+		phase2 = pickle.load(file)
+
+	import os
+	os.remove(save_file)
+
+	phase_eval2 = phase2.evaluate(test_num)
+
+	print("Phase_eval1 = " + str(phase_eval1))
+	print("Phase_eval2 = " + str(phase_eval2))
+
+
+	model = Kronecker_Model([ramp,phase])
+	inputs = [1,2]
+	inputs_dict = {'phase':2,'ramp': 1}
+
+	model_out1 = model.evaluate(inputs)
+	model_out2 = model.evaluate(inputs_dict)
+
+	print("Model with list input vs with dict: " + str(model_out1-model_out2))
+
+	with open(save_file,'wb') as file:
+		pickle.dump(model,file)
+
+	#load the basis
+	with open(save_file,'rb') as file:
+		model2 = pickle.load(file)
+
+	import os
+	os.remove(save_file)
+
+	model2_out = model2.evaluate(inputs)
+	print("Model recovered vs original model: " + str(model2_out-model_out1))
+
+	model3 = Kronecker_Model([ramp])
+
+	model3_out1 = model3.evaluate([2])
+	model3_out2 = model3.evaluate([2],['ramp'])
+
+	print("Model without derivative:" + str(model3_out1))
+	print("Model with derivative:" + str(model3_out2))
+
 if __name__=='__main__':
-	unit_test()
+	#object_testing()
+	#unit_test()
 	#numpy_testing()
-	#least_squares_testing()
+	least_squares_testing()
