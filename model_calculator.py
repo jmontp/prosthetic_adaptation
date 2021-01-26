@@ -229,13 +229,10 @@ if __name__=='__main__':
 
     else: 
         m_model = model_loader('H_model.pickle')
-        coefficients = [1,1,1,1,1,1]
-        for func in m_model.models:
-            func.pca_coefficients = coefficients
 
-
-    h_eval = m_model.evalulate_H_func(1,2,3,4)
-    dh_eval = m_model.evaluate_dH_func(1,2,3,4)
+    print(m_model.models)
+    h_eval = m_model.evalulate_H_func(1,2,3,4,1,2,3,4,5,6)
+    dh_eval = m_model.evaluate_dH_func(1,2,3,4,1,2,3,4,5,6)
 
 
 

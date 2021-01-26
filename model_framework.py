@@ -64,7 +64,10 @@ class Polynomial_Basis(Basis):
 	#This function will evaluate the derivative of the model at the given 
 	# x value
 	def evaluate_derivative(self,x):
-		result = [i*math.pow(x,(i-1)) for i in range(0,self.n)]
+		if(x==0):
+			result = [0] * self.n
+		else:
+			result = [i*math.pow(x,(i-1)) for i in range(0,self.n)]
 		return np.array(result)
 
 
@@ -136,6 +139,7 @@ class Kronecker_Model:
 			size = size * func.size
 
 		self.size = size
+		self.num_states = len(funcs)
 		self.pca_axis = []
 		self.pca_coefficients = []
         #Todo: Add average pca coefficient
@@ -147,13 +151,16 @@ class Kronecker_Model:
 	# value you want to evaluate the function as the value
 	def evaluate(self, *function_inputs,partial_derivative=None):
 		
+		#Crop so that you are only using the number of states and not the gait fingerprint
+		states = function_inputs[:self.num_states]
+		
 		#Verify that you have the correct input 
-		if(len(function_inputs) != len(self.funcs)):
-			err_string = 'Wrong amount of inputs. Received:'  + str(len(function_inputs)) + ', expected:' + str(len(self.funcs))
+		if(len(states) != len(self.funcs)):
+			err_string = 'Wrong amount of inputs. Received:'  + str(len(states)) + ', expected:' + str(len(self.funcs))
 			raise ValueError(err_string)
 
-		#if(isinstance(function_inputs,dict) == False and isinstance(function_inputs,list) == False): 
-		#	raise TypeError("Only Lists and Dicts are supported, you used:" + str(type(function_inputs)))
+		#if(isinstance(states,dict) == False and isinstance(states,list) == False): 
+		#	raise TypeError("Only Lists and Dicts are supported, you used:" + str(type(states)))
 
 		#There are two behaviours: one for list and one for dictionary
 		#List expects the same order that you received it in
@@ -161,13 +168,13 @@ class Kronecker_Model:
 
 		result = np.array([1])
 		#Assume that you get a list which means that everything is in order
-		for values in zip(function_inputs,self.funcs,self.alocation_buff):
+		for values in zip(states,self.funcs,self.alocation_buff):
 			curr_val, curr_func, curr_buf = values
 			
 			#If you get a dictionary, then get the correct input for the function
-			if( isinstance(function_inputs,dict) == True):
+			if( isinstance(states,dict) == True):
 				#Get the value from the var_name in the dictionary
-				curr_val = function_inputs[curr_func.var_name]
+				curr_val = states[curr_func.var_name]
 
 			#Verify if we want to take the partial derivative of this function
 			if(partial_derivative is not None and curr_func.var_name in partial_derivative):
@@ -189,11 +196,17 @@ class Kronecker_Model:
 	def set_pca_coefficients(self,pca_coefficients):
 		self.pca_coefficients = pca_coefficients
 
-	def sum_pca_axis(self):
-		return sum([axis*coeff for axis,coeff in zip(self.pca_axis,self.pca_coefficients)])
+	def sum_pca_axis(self,pca_coefficients):
+		if(len(self.pca_axis) != len(pca_coefficients)):
+			err_string = 'Wrong amount of inputs. Received:'  + str(len(pca_coefficients)) + ', expected:' + str(len(self.pca_axis))
+			raise ValueError(err_string)
+
+		return sum([axis*coeff for axis,coeff in zip(self.pca_axis,pca_coefficients)])
 
 	def evaluate_scalar_output(self,*function_inputs,partial_derivative=None):
-		return self.evaluate(*function_inputs,partial_derivative=partial_derivative) @ self.sum_pca_axis().T
+		states = function_inputs[:self.num_states]
+		pca_coefficients = function_inputs[self.num_states:]
+		return self.evaluate(*states,partial_derivative=partial_derivative) @ self.sum_pca_axis(pca_coefficients).T
 
 
 #Evaluate model 
@@ -201,21 +214,24 @@ def model_prediction(model,ξ,*input_list,partial_derivative=None):
 	result = [model.evaluate(*function_inputs,partial_derivative=partial_derivative)@ξ for function_inputs in zip(*input_list)]
 	return np.array(result)
 
-
+##LOOK HERE 
+##There is a big mess with how the measurement model is storing the gait fingerprint coefficients
+##They should really just be part of the state vector, the AXIS should be stored internally since that is 
+## fixed
 class Measurement_Model():
 	def __init__(self,*models):
 		self.models = models
 
-	def evalulate_H_func(self,*inputs):
+	def evaluate_h_func(self,*states):
 		#get the output
-		result = [model.evaluate_scalar_output(*inputs) for model in self.models]
+		result = [model.evaluate_scalar_output(*states) for model in self.models]
 		return np.array(result)
 
-	def evaluate_dH_func(self,*inputs):
+	def evaluate_dh_func(self,*states):
 		result = []
 		for model in self.models:
-			state_derivatives = [model.evaluate_scalar_output(*inputs,partial_derivative=func.var_name) for func in model.funcs]
-			gait_fingerprint_derivatives = [model.evaluate(*inputs)@axis for axis in model.pca_axis]
+			state_derivatives = [model.evaluate_scalar_output(*states,partial_derivative=func.var_name) for func in model.funcs]
+			gait_fingerprint_derivatives = [model.evaluate(*states)@axis for axis in model.pca_axis]
 			total_derivatives = state_derivatives + gait_fingerprint_derivatives
 			result.append(total_derivatives)
 
@@ -249,14 +265,19 @@ def least_squares(model, output, *data):
 	return np.linalg.solve(R.T @ R, R.T @ output), R
 
 
+#Save the model so that you can use them later
 def model_saver(model,filename):
 	with open(filename,'wb') as file:
 		pickle.dump(model,file)
 
+#Load the model from a file
 def model_loader(filename):
 	with open(filename,'rb') as file:
 		return pickle.load(file)
 
+#Sped up implementation of the kronecker product using 
+# outer products if a buffer is provided. This saves the time it takes
+# to allocate every intermediate result
 def fast_kronecker(a,b,buff=None):
 	#If you pass the buffer is the fast implementation
 	#139 secs with 1 parameter fit
