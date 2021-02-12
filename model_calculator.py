@@ -16,7 +16,7 @@ Created on Wed Sep  2 21:16:47 2020
 
 #My own janky imports
 from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp, get_subject_names
-from model_framework import Fourier_Basis, Polynomial_Basis, Kronecker_Model, Measurement_Model, least_squares, model_prediction, model_saver, model_loader
+from model_framework import Fourier_Basis, Polynomial_Basis, Kronecker_Model, Measurement_Model, least_squares, model_prediction, model_saver, model_loader, calculate_regression_matrix
 #General Purpose and plotting
 import plotly.express as px
 import plotly.graph_objs as go
@@ -33,7 +33,7 @@ import sys
 subject_names = get_subject_names()
 
 
-def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
+def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=False):
 
     ##Setup model config
     #The amount of datapoints we have per step
@@ -54,22 +54,33 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
             'cadetblue', 'darkgoldenrod', 'darkseagreen', 'deeppink', 'midnightblue']
     color_index=0
 
+    #We can also leave one person out of Ξ and output his ξ directly
+    leave_out_ξ = None
+    leave_out_R = None
 
     ##Calculate a model per subject
     #Iterate through all the trials for a test subject
     for subject in subject_names:
    
         #Get the data for the subject
-        print("Doing subject: " + subject)
+        #print("Doing subject: " + subject)
         left_hip_angle = get_trials_in_numpy(subject,joint)
         phases = get_phase_from_numpy(left_hip_angle)
         phase_dots = get_phase_dot(subject)
         step_lengths = get_step_length(subject)
         ramps = get_ramp(subject)
-        print("Obtained data for: " + subject)
+        #print("Obtained data for: " + subject)
 
         #Fit the model for the person
         ξ, R_p = least_squares(model, left_hip_angle.ravel(), phase_dots.ravel(), ramps.ravel(), step_lengths.ravel(),phases.ravel())
+        
+        #If we want to leave someone out store their parameters here
+        if(subject == subject_to_leave_out):
+            leave_out_ξ = ξ
+            leave_out_R = R_p
+            #Skip over this person
+            continue
+
         G_total += R_p.T @ R_p
         N_total += R_p.shape[0]
 
@@ -97,7 +108,8 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
 
 
     #Plot everything
-    fig.show()
+    if(visualize == True):
+        fig.show()
 
     #This is equation eq:inner_regressor in the paper!
     G = G_total/N_total
@@ -106,7 +118,7 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
     amount_of_subjects=len(subject_names)
 
     #Create the parameter matrix based on the coefficients for all the models
-    Ξ = np.array(parameter_list).reshape(amount_of_subjects,model.size)
+    Ξ = np.array(parameter_list).reshape(amount_of_subjects-1,model.size)
 
     #-----------------------------------------------------------------------------------------------------------------
     
@@ -127,10 +139,7 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
     
     # Verify that it diagonalized correctly G = O (eig) O.T
     assert(np.linalg.norm(G - O @ V @ O.T)< 1e-7 * np.linalg.norm(G)) # passes
-    # print(np.linalg.norm(G - O @ V @ O.T)) # good
-    # print(np.linalg.norm(G - O.T @ V @ O)) # false
-    # print(np.linalg.norm(G - sum([O[:,[i]]@ O[:,[i]].T * eig[i] for i in range(len(eig))]))) # good
-    # print(np.linalg.norm(G)) # false
+    
 
     #This is based on the equation in eq:Qdef
     # Q G Q = I
@@ -187,14 +196,53 @@ def calculate_pca_axis(model, joint,save_file=None, vizualize=False):
     #Calculate the cumulative variance
     cumulative_variance = np.cumsum([0]+list((ψs[0:η])/sum(ψs)))
 
-    return pca_axis_array, cumulative_variance
+    return pca_axis_array, ξ_avg, cumulative_variance, leave_out_ξ, leave_out_R
 
 #I think the outputs should be the model, the optimal parameters and the percentage of variation per parameter
 
 
+def calculate_gait_fingerprint(model, subject, personalization_map, avg_personalization_vector, joint, R_personalization=None):
+
+    ##Setup model config
+    #The amount of datapoints we have per step
+    datapoints=150
+
+    #Dictionary for Subject to gait fingerprints
+    gait_fingerprint = {}
+
+    ##Calculate a model per subject
+    #Get the data for the subject
+    print("Personalizing subject: " + subject)
+    joint_angle = get_trials_in_numpy(subject,joint)
+    
+    if(R_personalization is None):
+        phases = get_phase_from_numpy(joint_angle)
+        phase_dots = get_phase_dot(subject)
+        step_lengths = get_step_length(subject)
+        ramps = get_ramp(subject)
+        #print("Obtained data for: " + subject)
+
+        #Fit the model for the person
+        R_personalization = calculate_regression_matrix(model, phase_dots.ravel(), ramps.ravel(), step_lengths.ravel(),phases.ravel())
+        #print("R_personalization shape:" + str(R_personalization.shape))
+
+
+    average_estimate = R_personalization @ avg_personalization_vector
+
+    Y = joint_angle.ravel() - average_estimate
+    A = R_personalization @ personalization_map
+
+    c = np.linalg.solve(A.T @ A, A.T @ Y)
+    
+    subject_sum = avg_personalization_vector + personalization_map @ c
+    
+    return c, subject_sum
+
+
+
 if __name__=='__main__':
 
-    if True:
+    if False:
         ##Create the model for the hip
         phase_model = Fourier_Basis(6,'phase')
         phase_dot_model = Polynomial_Basis(1, 'phase_dot')
@@ -204,7 +252,7 @@ if __name__=='__main__':
         model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
 
         ##Get the pca axis
-        pca_axis_hip, cumulative_variance = calculate_pca_axis(model_hip, 'hip')
+        pca_axis_hip, _, cumulative_variance = calculate_personalization_map(model_hip, 'hip')
 
         #Set the axis
         model_hip.set_pca_axis(pca_axis_hip)
@@ -218,7 +266,7 @@ if __name__=='__main__':
         model_ankle = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
 
         ##Get the pca axis
-        pca_axis_ankle, cumulative_variance = calculate_pca_axis(model_ankle, 'ankle')
+        pca_axis_ankle, _, cumulative_variance = calculate_personalization_map(model_ankle, 'ankle')
 
         #Set the axis
         model_ankle.set_pca_axis(pca_axis_ankle)
@@ -227,16 +275,82 @@ if __name__=='__main__':
 
         model_saver(m_model,'H_model.pickle')
 
+
+    elif True:
+        ##Create the model for the hip
+        phase_model = Fourier_Basis(6,'phase')
+        phase_dot_model = Polynomial_Basis(1, 'phase_dot')
+        ramp_model = Polynomial_Basis(1, 'ramp')
+        step_length_model = Polynomial_Basis(1,'step_length')
+        
+        model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
+
+        #Dictionary of subject to gait fingerprint
+        gait_fingerprints = {}
+
+        #Dictionary of the expected model parameters
+        expected_model_parameters = {}
+
+        #Save the personalization maps as well
+        personalization_map_dict = {}
+
+        for name in subject_names:
+            ##Get the pca axis
+            pca_axis_hip, ξ_avg, cumulative_variance, left_out_ξ, regression_matrix = calculate_personalization_map(model_hip, 'hip', name)
+            
+            #Transpose in order to use it with least squares
+            pca_axis_np = np.array(pca_axis_hip).T
+
+            expected_model_parameters[name] = left_out_ξ
+            personalization_map_dict[name] = pca_axis_np
+
+            #Get the gait fingerprint
+            subject_c, estimated_ξ = calculate_gait_fingerprint(model_hip, name, pca_axis_np, ξ_avg, 'hip', regression_matrix)
+
+            gait_fingerprints[name] = subject_c
+
+            print('Subject' + name + ' optimal gait fingerprint: ' + str(left_out_ξ))
+            print('Subject' + name + ' is estimated gait fingerprint: ' + str(estimated_ξ))
+            print("L2 Norm Between the two: " + str(np.linalg.norm(left_out_ξ - estimated_ξ, ord=2)))
+
+        save_list = [gait_fingerprints, expected_model_parameters, personalization_map]
+
+        model_saver(save_list, 'gait_fingerprints.pickle')
     else: 
         m_model = model_loader('H_model.pickle')
 
-    print(m_model.models)
-    h_eval = m_model.evalulate_H_func(1,2,3,4,1,2,3,4,5,6)
-    dh_eval = m_model.evaluate_dH_func(1,2,3,4,1,2,3,4,5,6)
+    # print(m_model.models)
+    # h_eval = m_model.evalulate_H_func(1,2,3,4,1,2,3,4,5,6)
+    # dh_eval = m_model.evaluate_dH_func(1,2,3,4,1,2,3,4,5,6)
+
+    # print(h_eval)
+    # print(dh_eval)
+
+    # print('done')
+
+    # Subject AB01 optimal gait fingerprint: 
+    # [ 9.14011913e+00  
+    #   2.19495655e+01 
+    #  -2.36684023e+00  
+    #   1.55721951e-02
+    #   9.23513405e-02 
+    #  -1.87304132e-01 
+    #  -1.90792290e+00 
+    #  -1.08625293e+00
+    #   1.61507164e+00 
+    #  -3.11349367e-01  
+    #   6.20980057e-02]
 
 
-
-    print(h_eval)
-    print(dh_eval)
-
-    print('done')
+    # Subject AB01 estimated gait fingerprint: 
+    # [9.13885511 
+    #  21.8183642  
+    # -2.74692331 
+    # -0.17744426  
+    #  0.25689092 
+    # -0.23389942
+    # -1.91756481 
+    # -1.30526491  
+    #  2.02820643 
+    # -0.30666016 
+    # -0.04787337]

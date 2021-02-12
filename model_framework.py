@@ -238,9 +238,8 @@ class Measurement_Model():
 		return np.array(result)
 
 
-#Calculate the least squares based on the data
-def least_squares(model, output, *data):
-	
+#Create a regressor matrix for the given output
+def calculate_regression_matrix(model, *data):
 	#Get data size
 	rows = data[0].shape[0]
 	columns = model.size
@@ -258,7 +257,15 @@ def least_squares(model, output, *data):
 	#Rename
 	R = regressor_matrix
 
-	#Only make it a np array if it isnt
+	return R
+
+
+#Calculate the least squares based on the data
+def least_squares(model, output, *data):
+	
+	R = calculate_regression_matrix(model, *data)
+
+	#Make the output vector an np array if it isnt
 	if isinstance(output,(np.ndarray)):
 		output = np.array(output)
 
