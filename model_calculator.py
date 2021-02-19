@@ -57,6 +57,7 @@ def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=
     #We can also leave one person out of Ξ and output his ξ directly
     leave_out_ξ = None
     leave_out_R = None
+    expected_output = None
 
     ##Calculate a model per subject
     #Iterate through all the trials for a test subject
@@ -78,6 +79,7 @@ def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=
         if(subject == subject_to_leave_out):
             leave_out_ξ = ξ
             leave_out_R = R_p
+            expected_output = left_hip_angle
             #Skip over this person
             continue
 
@@ -196,7 +198,7 @@ def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=
     #Calculate the cumulative variance
     cumulative_variance = np.cumsum([0]+list((ψs[0:η])/sum(ψs)))
 
-    return pca_axis_array, ξ_avg, cumulative_variance, leave_out_ξ, leave_out_R
+    return pca_axis_array, ξ_avg, cumulative_variance, leave_out_ξ, leave_out_R, expected_output
 
 #I think the outputs should be the model, the optimal parameters and the percentage of variation per parameter
 
@@ -294,28 +296,44 @@ if __name__=='__main__':
         #Save the personalization maps as well
         personalization_map_dict = {}
 
+        #Save the regression matrix, why not
+        regression_matrix_dict = {}
+
+        #Average Xi map
+        average_xi_map = {}
+
+        #expected output
+        output_map = {}
+
         for name in subject_names:
             ##Get the pca axis
-            pca_axis_hip, ξ_avg, cumulative_variance, left_out_ξ, regression_matrix = calculate_personalization_map(model_hip, 'hip', name)
+            pca_axis_hip, ξ_avg, cumulative_variance, left_out_ξ, regression_matrix, expected_output = calculate_personalization_map(model_hip, 'hip', name)
             
             #Transpose in order to use it with least squares
-            pca_axis_np = np.array(pca_axis_hip).T
+            personalization_map = np.array(pca_axis_hip).T
 
             expected_model_parameters[name] = left_out_ξ
-            personalization_map_dict[name] = pca_axis_np
+            personalization_map_dict[name] = personalization_map
+            regression_matrix_dict[name] = regression_matrix
 
             #Get the gait fingerprint
-            subject_c, estimated_ξ = calculate_gait_fingerprint(model_hip, name, pca_axis_np, ξ_avg, 'hip', regression_matrix)
+            subject_c, estimated_ξ = calculate_gait_fingerprint(model_hip, name, personalization_map, ξ_avg, 'hip', regression_matrix)
 
             gait_fingerprints[name] = subject_c
 
-            print('Subject' + name + ' optimal gait fingerprint: ' + str(left_out_ξ))
-            print('Subject' + name + ' is estimated gait fingerprint: ' + str(estimated_ξ))
+            average_xi_map[name] = ξ_avg
+
+            output_map[name] = expected_output
+
+            #print('Subject' + name + ' optimal gait fingerprint: ' + str(left_out_ξ))
+            #print('Subject' + name + ' is estimated gait fingerprint: ' + str(estimated_ξ))
             print("L2 Norm Between the two: " + str(np.linalg.norm(left_out_ξ - estimated_ξ, ord=2)))
 
-        save_list = [gait_fingerprints, expected_model_parameters, personalization_map]
+        save_list = [gait_fingerprints, expected_model_parameters, personalization_map_dict, regression_matrix_dict, output_map, average_xi_map]
 
         model_saver(save_list, 'gait_fingerprints.pickle')
+
+        print("Saved succesfully!")
     else: 
         m_model = model_loader('H_model.pickle')
 
