@@ -149,13 +149,13 @@ class Kronecker_Model:
 	#The function inputs are expected in the same order as they where defined
 	#Alternatively, you can also input a dictionary with the var_name as the key and the 
 	# value you want to evaluate the function as the value
-	def evaluate(self, *function_inputs,partial_derivative=None):
+	def evaluate(self, *function_inputs,partial_derivative=None, result_buffer=None):
 		
 		#Crop so that you are only using the number of states and not the gait fingerprint
 		states = function_inputs[:self.num_states]
-		
+		amount_of_states = len(states)
 		#Verify that you have the correct input 
-		if(len(states) != len(self.funcs)):
+		if(amount_of_states != len(self.funcs)):
 			err_string = 'Wrong amount of inputs. Received:'  + str(len(states)) + ', expected:' + str(len(self.funcs))
 			raise ValueError(err_string)
 
@@ -167,6 +167,8 @@ class Kronecker_Model:
 		#Dictionary has key values for the function var names
 
 		result = np.array([1])
+		counter = 0
+
 		#Assume that you get a list which means that everything is in order
 		for values in zip(states,self.funcs,self.alocation_buff):
 			curr_val, curr_func, curr_buf = values
@@ -182,10 +184,19 @@ class Kronecker_Model:
 			else: 
 				apply_derivative = False
 
-			#Since there isnt an implementation for doing kron in one shot, do it one by one
-			result = fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), curr_buf)
+			#Add to counter to see if we are in the last variable
+			counter += 1
+			
+			#Assign the final value directly to the output
+			if(result_buffer is not None and counter == amount_of_states):
+				fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), result_buffer, True)
+			else:
+				#Since there isnt an implementation for doing kron in one shot, do it one by one
+				result = fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), curr_buf, False)
 
-		return result
+		#Only return if we are not using a result buffer
+		if(result_buffer is None):
+			return result
 
 	#Todo: Need to add functionality for the models pca_axis list
 	#Dont know if I want to have it run least squares in the initialization
@@ -252,6 +263,8 @@ def calculate_regression_matrix(model, *data):
 	counter = 0
 	for row in zip(*data):
 		regressor_matrix[counter,:] = model.evaluate(*row)
+		#model.evaluate(*row,result_buffer=regressor_matrix[counter])
+
 		counter = counter + 1
 
 	#Rename
@@ -285,11 +298,16 @@ def model_loader(filename):
 #Sped up implementation of the kronecker product using 
 # outer products if a buffer is provided. This saves the time it takes
 # to allocate every intermediate result
-def fast_kronecker(a,b,buff=None):
+def fast_kronecker(a,b,buff=None,reshape=False):
 	#If you pass the buffer is the fast implementation
 	#139 secs with 1 parameter fit
-	if(buff is not None):
-		return np.outer(a,b,buff).ravel().copy()
+	if(buff is not None and reshape == False):
+		#return np.outer(a,b,buff).ravel()
+		return np.outer(a,b,buff).flatten()
+
+	if(buff is not None and reshape == True):
+		return np.outer(a,b,buff.reshape(a.shape[0],b.shape[0]))
+
 
 	#Else use the default implementation
 	#276.738 secs with 1 param
@@ -426,7 +444,9 @@ def object_testing():
 	print("Model with derivative:" + str(model3_out2))
 
 if __name__=='__main__':
+	#All the test cases are probably broken 
 	#object_testing()
 	#unit_test()
 	#numpy_testing()
-	least_squares_testing()
+	#least_squares_testing()
+	pass

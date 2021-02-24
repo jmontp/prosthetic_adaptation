@@ -7,10 +7,14 @@ from math import pow, sqrt
 import numpy as np 
 import matplotlib.pyplot as plt
 
-#Calculate the standard deviation for every point in phase
-def standard_deviation_at_phase():
+from scipy.stats import f
 
-	list_of_dicts = model_loader('gait_fingerprints.pickle')
+
+
+#Calculate the standard deviation for every point in phase
+def standard_deviation_binned_by_phase(filename):
+
+	list_of_dicts = model_loader(filename)
 
 	gait_fingerprints, expected_model_parameters, personalization_map_dict, regression_matrix_dict, output_map, average_xi_map = tuple(list_of_dicts)
 
@@ -97,5 +101,90 @@ def standard_deviation_at_phase():
 
 
 
+
+def standard_deviation_total():
+
+	subject_names = get_subject_names()
+
+	f_score_dict = {}
+	for k,name in enumerate(subject_names):
+		f_score_dict[name] = []
+
+	for i in range(1,7):
+
+		filename = 'gait_fingerprints_n' + str(i) + '.pickle'
+			
+		list_of_dicts = model_loader(filename)
+
+		gait_fingerprints, expected_model_parameters, personalization_map_dict, regression_matrix_dict, output_map, average_xi_map = tuple(list_of_dicts)
+
+		amount_of_subjects = len(subject_names)
+
+
+		for j, name in enumerate(subject_names):
+			
+			#Get the information for a particular person
+			gait_fingerprint = gait_fingerprints[name]
+			expected_model_parameter = expected_model_parameters[name]
+			personalization_map = personalization_map_dict[name]
+			regression_matrix = regression_matrix_dict[name]
+			output = output_map[name]
+			average_xi = average_xi_map[name] 
+
+			#Calculate sum of squared errors for the restricted model
+			restricted_RSS = np.mean(np.power(output.ravel() - regression_matrix @ average_xi, 2))
+
+			#Calcuate the residual error based on the gait figerprint
+			individualized_xi = average_xi + personalization_map @ gait_fingerprint
+			#individualized_xi = expected_model_parameters[name]
+
+			unrestricted_RSS = np.mean(np.power(output.ravel() - regression_matrix @ individualized_xi, 2))
+
+			#How many samples are we testing
+			n = regression_matrix.shape[0]
+			#print("The number of samples is: " + str(n))
+
+			#How many gait coefficients do we have
+			p2 = i
+			p1 = 0
+
+			#Calculate the f-score
+			f_score = ((restricted_RSS - unrestricted_RSS)/(p2-p1))/(unrestricted_RSS/(n - p2))
+			print(name + "      f_score:                   " + str(f_score))
+
+			f_score_dict[name].append(f_score)
+
+			#Get the critical f-score to validate
+			df1 = p2-p1
+			df2 = n-p2
+
+			#Confidence interval
+			ci = 0.05
+
+			#Critical F score
+			cf = f.isf(ci, df1, df2)
+			print(name + " Critical F-score: " + str(cf))
+
+			#Validate if this works
+			if(cf < f_score):
+				print("We have a paper")
+			else:
+				print("gg")
+
+	for key in f_score_dict.keys():
+		print(key + str(f_score_dict[name]))
+
+
+	for name in subject_names:
+		plt.plot(np.array(range(1,7)), np.array(np.array(f_score_dict[name])))
+	
+
+	plt.yscale('log')
+	plt.ylabel('F_score')
+	plt.xlabel('gait finterprints')
+	plt.legend(f_score_dict.keys())
+	plt.show()
+
 if __name__ == '__main__':
-	standard_deviation_at_phase()
+	standard_deviation_total()
+	

@@ -33,7 +33,7 @@ import sys
 subject_names = get_subject_names()
 
 
-def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=False):
+def calculate_personalization_map(model, joint, subject_to_leave_out='', num_gait_fingerprints=6, visualize=False):
 
     ##Setup model config
     #The amount of datapoints we have per step
@@ -120,7 +120,11 @@ def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=
     amount_of_subjects=len(subject_names)
 
     #Create the parameter matrix based on the coefficients for all the models
-    Ξ = np.array(parameter_list).reshape(amount_of_subjects-1,model.size)
+    #If you leave that out, take that into consideration
+    if(subject_to_leave_out == ''):
+        Ξ = np.array(parameter_list).reshape(amount_of_subjects,model.size)
+    else: 
+        Ξ = np.array(parameter_list).reshape(amount_of_subjects-1,model.size)
 
     #-----------------------------------------------------------------------------------------------------------------
     
@@ -187,7 +191,7 @@ def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=
         assert(ψs[i] > ψs[i+1])
 
     #Define the amount principles axis that we want
-    η = 6
+    η = num_gait_fingerprints
     pca_axis_array = []
 
     #Convert from the new basis back to the original basis vectors
@@ -203,7 +207,7 @@ def calculate_personalization_map(model, joint, subject_to_leave_out, visualize=
 #I think the outputs should be the model, the optimal parameters and the percentage of variation per parameter
 
 
-def calculate_gait_fingerprint(model, subject, personalization_map, avg_personalization_vector, joint, R_personalization=None):
+def calculate_gait_fingerprint(model, subject, personalization_map, avg_personalization_vector, joint, num_gait_fingerprints, R_personalization=None):
 
     ##Setup model config
     #The amount of datapoints we have per step
@@ -244,7 +248,42 @@ def calculate_gait_fingerprint(model, subject, personalization_map, avg_personal
 
 if __name__=='__main__':
 
-    if False:
+    #Calculate two models
+    if True:
+        ##Create the model for the hip
+        phase_model = Fourier_Basis(6,'phase')
+        phase_dot_model = Polynomial_Basis(2, 'phase_dot')
+        ramp_model = Polynomial_Basis(2, 'ramp')
+        step_length_model = Polynomial_Basis(2,'step_length')
+        
+        model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
+
+        ##Get the pca axis
+        pca_axis_hip, _, cumulative_variance,_,_,_ = calculate_personalization_map(model_hip, 'hip', '', )
+
+        # #Set the axis
+        # model_hip.set_pca_axis(pca_axis_hip)
+
+
+        # ##Create the model for the ankle
+        # phase_model = Fourier_Basis(6,'phase')
+        # phase_dot_model = Polynomial_Basis(1, 'phase_dot')
+        # ramp_model = Polynomial_Basis(1, 'ramp')
+        # step_length_model = Polynomial_Basis(1,'step_length')
+        # model_ankle = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
+
+        # ##Get the pca axis
+        # pca_axis_ankle, _, cumulative_variance = calculate_personalization_map(model_ankle, 'ankle')
+
+        # #Set the axis
+        # model_ankle.set_pca_axis(pca_axis_ankle)
+
+        # m_model = Measurement_Model(model_hip, model_ankle)
+
+        # model_saver(m_model,'H_model.pickle')
+
+    #Run to get the 'leave one out validation'
+    elif False:
         ##Create the model for the hip
         phase_model = Fourier_Basis(6,'phase')
         phase_dot_model = Polynomial_Basis(1, 'phase_dot')
@@ -253,122 +292,53 @@ if __name__=='__main__':
         
         model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
 
-        ##Get the pca axis
-        pca_axis_hip, _, cumulative_variance = calculate_personalization_map(model_hip, 'hip')
+        for n in range(5,6):
+            #Dictionary of subject to gait fingerprint
+            gait_fingerprints = {}
 
-        #Set the axis
-        model_hip.set_pca_axis(pca_axis_hip)
+            #Dictionary of the expected model parameters
+            expected_model_parameters = {}
 
+            #Save the personalization maps as well
+            personalization_map_dict = {}
 
-        ##Create the model for the ankle
-        phase_model = Fourier_Basis(6,'phase')
-        phase_dot_model = Polynomial_Basis(1, 'phase_dot')
-        ramp_model = Polynomial_Basis(1, 'ramp')
-        step_length_model = Polynomial_Basis(1,'step_length')
-        model_ankle = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
+            #Save the regression matrix, why not
+            regression_matrix_dict = {}
 
-        ##Get the pca axis
-        pca_axis_ankle, _, cumulative_variance = calculate_personalization_map(model_ankle, 'ankle')
+            #Average Xi map
+            average_xi_map = {}
 
-        #Set the axis
-        model_ankle.set_pca_axis(pca_axis_ankle)
+            #expected output
+            output_map = {}
 
-        m_model = Measurement_Model(model_hip, model_ankle)
+            for name in subject_names:
+                ##Get the pca axis
+                pca_axis_hip, ξ_avg, cumulative_variance, left_out_ξ, regression_matrix, expected_output = calculate_personalization_map(model_hip, 'hip', name, n)
+                
+                #Transpose in order to use it with least squares
+                personalization_map = np.array(pca_axis_hip).T
 
-        model_saver(m_model,'H_model.pickle')
+                expected_model_parameters[name] = left_out_ξ
+                personalization_map_dict[name] = personalization_map
+                regression_matrix_dict[name] = regression_matrix
 
+                #Get the gait fingerprint
+                subject_c, estimated_ξ = calculate_gait_fingerprint(model_hip, name, personalization_map, ξ_avg, 'hip', n, regression_matrix)
 
-    elif True:
-        ##Create the model for the hip
-        phase_model = Fourier_Basis(6,'phase')
-        phase_dot_model = Polynomial_Basis(1, 'phase_dot')
-        ramp_model = Polynomial_Basis(1, 'ramp')
-        step_length_model = Polynomial_Basis(1,'step_length')
-        
-        model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
+                gait_fingerprints[name] = subject_c
 
-        #Dictionary of subject to gait fingerprint
-        gait_fingerprints = {}
+                average_xi_map[name] = ξ_avg
 
-        #Dictionary of the expected model parameters
-        expected_model_parameters = {}
+                output_map[name] = expected_output
 
-        #Save the personalization maps as well
-        personalization_map_dict = {}
+                #print('Subject' + name + ' optimal gait fingerprint: ' + str(left_out_ξ))
+                #print('Subject' + name + ' is estimated gait fingerprint: ' + str(estimated_ξ))
+                print("L2 Norm Between the two: " + str(np.linalg.norm(left_out_ξ - estimated_ξ, ord=2)))
 
-        #Save the regression matrix, why not
-        regression_matrix_dict = {}
+            save_list = [gait_fingerprints, expected_model_parameters, personalization_map_dict, regression_matrix_dict, output_map, average_xi_map]
 
-        #Average Xi map
-        average_xi_map = {}
+            file_name = 'gait_fingerprints_n' + str(n) + '.pickle'
 
-        #expected output
-        output_map = {}
+            model_saver(save_list, file_name)
 
-        for name in subject_names:
-            ##Get the pca axis
-            pca_axis_hip, ξ_avg, cumulative_variance, left_out_ξ, regression_matrix, expected_output = calculate_personalization_map(model_hip, 'hip', name)
-            
-            #Transpose in order to use it with least squares
-            personalization_map = np.array(pca_axis_hip).T
-
-            expected_model_parameters[name] = left_out_ξ
-            personalization_map_dict[name] = personalization_map
-            regression_matrix_dict[name] = regression_matrix
-
-            #Get the gait fingerprint
-            subject_c, estimated_ξ = calculate_gait_fingerprint(model_hip, name, personalization_map, ξ_avg, 'hip', regression_matrix)
-
-            gait_fingerprints[name] = subject_c
-
-            average_xi_map[name] = ξ_avg
-
-            output_map[name] = expected_output
-
-            #print('Subject' + name + ' optimal gait fingerprint: ' + str(left_out_ξ))
-            #print('Subject' + name + ' is estimated gait fingerprint: ' + str(estimated_ξ))
-            print("L2 Norm Between the two: " + str(np.linalg.norm(left_out_ξ - estimated_ξ, ord=2)))
-
-        save_list = [gait_fingerprints, expected_model_parameters, personalization_map_dict, regression_matrix_dict, output_map, average_xi_map]
-
-        model_saver(save_list, 'gait_fingerprints.pickle')
-
-        print("Saved succesfully!")
-    else: 
-        m_model = model_loader('H_model.pickle')
-
-    # print(m_model.models)
-    # h_eval = m_model.evalulate_H_func(1,2,3,4,1,2,3,4,5,6)
-    # dh_eval = m_model.evaluate_dH_func(1,2,3,4,1,2,3,4,5,6)
-
-    # print(h_eval)
-    # print(dh_eval)
-
-    # print('done')
-
-    # Subject AB01 optimal gait fingerprint: 
-    # [ 9.14011913e+00  
-    #   2.19495655e+01 
-    #  -2.36684023e+00  
-    #   1.55721951e-02
-    #   9.23513405e-02 
-    #  -1.87304132e-01 
-    #  -1.90792290e+00 
-    #  -1.08625293e+00
-    #   1.61507164e+00 
-    #  -3.11349367e-01  
-    #   6.20980057e-02]
-
-
-    # Subject AB01 estimated gait fingerprint: 
-    # [9.13885511 
-    #  21.8183642  
-    # -2.74692331 
-    # -0.17744426  
-    #  0.25689092 
-    # -0.23389942
-    # -1.91756481 
-    # -1.30526491  
-    #  2.02820643 
-    # -0.30666016 
-    # -0.04787337]
+            print("Saved succesfully!: file name: " + file_name)
