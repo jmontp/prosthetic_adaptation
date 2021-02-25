@@ -14,7 +14,7 @@ Created on Wed Sep  2 21:16:47 2020
 
 #%% Imports and setup
 
-#My own janky imports
+#My own imports
 from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp, get_subject_names
 from model_framework import Fourier_Basis, Polynomial_Basis, Kronecker_Model, Measurement_Model, least_squares, model_prediction, model_saver, model_loader, calculate_regression_matrix
 #General Purpose and plotting
@@ -252,15 +252,15 @@ if __name__=='__main__':
     if True:
         ##Create the model for the hip
         phase_model = Fourier_Basis(6,'phase')
-        phase_dot_model = Polynomial_Basis(2, 'phase_dot')
-        ramp_model = Polynomial_Basis(2, 'ramp')
-        step_length_model = Polynomial_Basis(2,'step_length')
+        phase_dot_model = Polynomial_Basis(3, 'phase_dot')
+        ramp_model = Polynomial_Basis(3, 'ramp')
+        step_length_model = Polynomial_Basis(3,'step_length')
         
         model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
 
         ##Get the pca axis
         pca_axis_hip, _, cumulative_variance,_,_,_ = calculate_personalization_map(model_hip, 'hip', '', )
-
+        print(pca_axis_hip)
         # #Set the axis
         # model_hip.set_pca_axis(pca_axis_hip)
 

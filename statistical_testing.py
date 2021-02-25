@@ -11,6 +11,33 @@ from scipy.stats import f
 
 
 
+def calculate_f_score(unrestricted_RSS,restricted_RSS,p1,p2,n,ci=0.05,visualize=True):
+	#Calculate the f-score
+	f_score = ((restricted_RSS - unrestricted_RSS)/(p2-p1))/(unrestricted_RSS/(n - p2))
+	
+	if(visualize==True):
+		print("      f_score:       " + str(f_score))
+
+	#Get the critical f-score to validate
+	df1 = p2-p1
+	df2 = n-p2
+
+	#Critical F score
+	critical_f_score = f.isf(ci, df1, df2)
+	
+	if(visualize):
+		print(" Critical F-score: " + str(critical_f_score))
+
+	#Validate if this works
+	if(critical_f_score < f_score):
+		if(visualize):
+			print("We have a paper")
+	else:
+		if(visualize):
+			print("gg")
+
+	return f_score, critical_f_score
+
 #Calculate the standard deviation for every point in phase
 def standard_deviation_binned_by_phase(filename):
 

@@ -15,8 +15,7 @@ import numpy as np
 import math
 import pickle
 
-
-
+from os import path
 
 #--------------------------
 #Need to create two objects:
@@ -96,23 +95,21 @@ class Fourier_Basis(Basis):
 
 
 
-#----------------------------------------
-#Not really using this right now so keeping in the old format
-def berstein_basis(n,var_name):
 
-	def b_func(x):
-		basis = [math.comb(n,i)*(1-x)**(n-i) for i in range(0,n+1)];
+#Not really using this right now so keeping in the old format
+class Bernstein_Basis(Basis):
+
+	def __init__(self, n, var_name):
+		Basis.__init__(self, n, var_name)
+		self.size = n
+
+	def evaluate(self,x):
+		basis = [math.comb(self.n,i)*math.pow(x,i)*math.pow((1-x),(self.n-i)) for i in range(0,self.n+1)];
 		return np.array(basis)
 
-	b_func.parent_function = 'berstein_basis'
-	b_func.params = n
-	b_func.size = n
-	b_func.variable_name = var_name
-
-
-	return b_func
-#----------------------------------------
-
+	def evaluate_derivative(self,x):
+		#raise NotImplementedError "Bernstain Basis derivative not implmented"
+		pass
 
 #Model Object:
 # list of basis objects
@@ -129,6 +126,7 @@ class Kronecker_Model:
 		#Additionally, pre-allocate arrays for kronecker products intermediaries 
 		# to speed up results
 		self.alocation_buff = []
+		self.order = []
 		size = 1;
 		for func in funcs:
 			#Since we multiply left to right, the total size will be on the left 
@@ -137,6 +135,9 @@ class Kronecker_Model:
 			self.alocation_buff.append(np.zeros((size, func.size)))
 
 			size = size * func.size
+
+			self.order.append(func.var_name)
+
 
 		self.size = size
 		self.num_states = len(funcs)
@@ -219,11 +220,32 @@ class Kronecker_Model:
 		pca_coefficients = function_inputs[self.num_states:]
 		return self.evaluate(*states,partial_derivative=partial_derivative) @ self.sum_pca_axis(pca_coefficients).T
 
+	def __str__(self):
+		output = ''
+		for func in self.funcs:
+			func_type = type(func).__name__
+			if(func_type == 'Polynomial_Basis'):
+				basis_identifier = 'P'
+			elif (func_type == 'Fourier_Basis'):
+				basis_identifier = 'F'
+			elif (func_type == 'Bernstein_Basis'):
+				basis_identifier = 'B'
+			else:
+				raise TypeError("This is not a basis")
+
+			output += func.var_name + '-' + str(func.n)+ basis_identifier + '--'
+		return output
+
+	def get_order(self):
+		return self.order
+
 
 #Evaluate model 
 def model_prediction(model,ξ,*input_list,partial_derivative=None):
 	result = [model.evaluate(*function_inputs,partial_derivative=partial_derivative)@ξ for function_inputs in zip(*input_list)]
 	return np.array(result)
+
+
 
 ##LOOK HERE 
 ##There is a big mess with how the measurement model is storing the gait fingerprint coefficients
@@ -249,40 +271,7 @@ class Measurement_Model():
 		return np.array(result)
 
 
-#Create a regressor matrix for the given output
-def calculate_regression_matrix(model, *data):
-	#Get data size
-	rows = data[0].shape[0]
-	columns = model.size
-	buffer_shape = (rows, columns)
 
-	#Initialize a buffer array
-	regressor_matrix = np.zeros(buffer_shape)
-
-	#Create the regressor matrix by evaluating the zipped data
-	counter = 0
-	for row in zip(*data):
-		regressor_matrix[counter,:] = model.evaluate(*row)
-		#model.evaluate(*row,result_buffer=regressor_matrix[counter])
-
-		counter = counter + 1
-
-	#Rename
-	R = regressor_matrix
-
-	return R
-
-
-#Calculate the least squares based on the data
-def least_squares(model, output, *data):
-	
-	R = calculate_regression_matrix(model, *data)
-
-	#Make the output vector an np array if it isnt
-	if isinstance(output,(np.ndarray)):
-		output = np.array(output)
-
-	return np.linalg.solve(R.T @ R, R.T @ output), R
 
 
 #Save the model so that you can use them later
