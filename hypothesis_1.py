@@ -110,15 +110,15 @@ fig.add_trace(go.Scatter(x=x, y=plot_expected_y, name="Measured Hip Angle", line
 #Average Estimate
 fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y, name="Estimated Avg Hip Angle", line_color='green'), row=1, col=1)
 #Std deviation fill
-fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y + 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle", fill='tonexty', line_color='green'), row=1, col=1)
-fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y - 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle", fill='tonexty', line_color='green'), row=1, col=1)
+fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y + 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle + 1.9std dev", fill='tonexty', line_color='green'), row=1, col=1)
+fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y - 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle - 1.9std dev", fill='tonexty', line_color='green'), row=1, col=1)
 
 
 #Individualized Estimate
 fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y, name="Estimated Ind Hip Angle", line_color='blue'), row=2, col=1)
 #Std deviation fill
-fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y + 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle", fill='tonexty', line_color='blue'), row=2, col=1)
-fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y - 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle", fill='tonexty', line_color='blue'), row=2, col=1)
+fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y + 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle + 1.9std dev", fill='tonexty', line_color='blue'), row=2, col=1)
+fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y - 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle - 1.9std dev", fill='tonexty', line_color='blue'), row=2, col=1)
 
 
 
