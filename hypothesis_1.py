@@ -61,11 +61,11 @@ est_ind = np.concatenate(est_ind_list, axis=0)
 
 #Calculate the variance for the restricted model (average gait model)
 residual_avg = Y - est_avg
-restricted_RSS = np.mean(np.power(Y - est_avg, 2))
+restricted_RSS = np.sum(np.power(residual_avg, 2))
 
 #Calculate the variance for the unrestricted model (individualized model)
 residual_ind = Y - est_ind
-unrestricted_RSS = np.mean(np.power(Y - est_ind, 2))
+unrestricted_RSS = np.sum(np.power(residual_ind, 2))
 
 #Calculate p1 and p2 based on the f-score 
 #Not sure how to set this up tbh
