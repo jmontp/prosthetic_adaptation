@@ -57,8 +57,8 @@ class Polynomial_Basis(Basis):
 
 	#This function will evaluate the model at the given x value
 	def evaluate(self,x):
-		result = [math.pow(x,i) for i in range(0,self.n)]
-		return np.array(result)
+		#result = [math.pow(x,i) for i in range(0,self.n)]
+		return np.power(np.full((1,self.n),x),np.arange(self.n))
 
 	#This function will evaluate the derivative of the model at the given 
 	# x value
@@ -79,10 +79,11 @@ class Fourier_Basis(Basis):
 
 	#This function will evaluate the model at the given x value
 	def evaluate(self,x):
-		result = [1]
-		result += ([np.cos(2*np.pi*i*x) for i in range(1,self.n)])
-		result += ([np.sin(2*np.pi*i*x) for i in range(1,self.n)]) 
-		return np.array(result)
+		l = np.arange(1,self.n)
+		result = np.ones(2*self.n-1)
+		result[1:self.n] = np.cos(2*np.pi*l*x)
+		result[self.n:] =  np.sin(2*np.pi*l*x)
+		return result
 
 
 	#This function will evaluate the derivative of the model at the given 
@@ -153,12 +154,12 @@ class Kronecker_Model:
 	def evaluate(self, *function_inputs,partial_derivative=None, result_buffer=None):
 		
 		#Crop so that you are only using the number of states and not the gait fingerprint
-		states = function_inputs[:self.num_states]
-		amount_of_states = len(states)
-		#Verify that you have the correct input 
-		if(amount_of_states != len(self.funcs)):
-			err_string = 'Wrong amount of inputs. Received:'  + str(len(states)) + ', expected:' + str(len(self.funcs))
-			raise ValueError(err_string)
+		#states = function_inputs[:self.num_states]
+		# amount_of_states = len(states)
+		# #Verify that you have the correct input 
+		# if(amount_of_states != len(self.funcs)):
+		# 	err_string = 'Wrong amount of inputs. Received:'  + str(len(states)) + ', expected:' + str(len(self.funcs))
+		# 	raise ValueError(err_string)
 
 		#if(isinstance(states,dict) == False and isinstance(states,list) == False): 
 		#	raise TypeError("Only Lists and Dicts are supported, you used:" + str(type(states)))
@@ -168,36 +169,38 @@ class Kronecker_Model:
 		#Dictionary has key values for the function var names
 
 		result = np.array([1])
-		counter = 0
+		# counter = 0
 
 		#Assume that you get a list which means that everything is in order
-		for values in zip(states,self.funcs,self.alocation_buff):
-			curr_val, curr_func, curr_buf = values
+		# for values in zip(states,self.funcs,self.alocation_buff):
+		for i in range(self.num_states):
+			# curr_val, curr_func, curr_buf = values
 			
-			#If you get a dictionary, then get the correct input for the function
-			if( isinstance(states,dict) == True):
-				#Get the value from the var_name in the dictionary
-				curr_val = states[curr_func.var_name]
+			# #If you get a dictionary, then get the correct input for the function
+			# if( isinstance(states,dict) == True):
+			# 	#Get the value from the var_name in the dictionary
+			# 	curr_val = states[curr_func.var_name]
 
 			#Verify if we want to take the partial derivative of this function
-			if(partial_derivative is not None and curr_func.var_name in partial_derivative):
-				apply_derivative = True
-			else: 
-				apply_derivative = False
+			# if(partial_derivative is not None and curr_func.var_name in partial_derivative):
+			# 	apply_derivative = True
+			# else: 
+			# 	apply_derivative = False
 
 			#Add to counter to see if we are in the last variable
-			counter += 1
+			# counter += 1
 			
 			#Assign the final value directly to the output
-			if(result_buffer is not None and counter == amount_of_states):
-				fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), result_buffer, True)
-			else:
-				#Since there isnt an implementation for doing kron in one shot, do it one by one
-				result = fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), curr_buf, False)
+			# if(result_buffer is not None and counter == amount_of_states):
+				#fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), result_buffer, True)
+			result=fast_kronecker(result,self.funcs[i].evaluate_conditional(function_inputs[i],False))#, self.alocation_buff[i], False)
+			# else:
+			# 	#Since there isnt an implementation for doing kron in one shot, do it one by one
+			# 	result = fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), curr_buf, False)
 
 		#Only return if we are not using a result buffer
-		if(result_buffer is None):
-			return result
+		# if(result_buffer is None):
+		return result.copy()
 
 	#Todo: Need to add functionality for the models pca_axis list
 	#Dont know if I want to have it run least squares in the initialization

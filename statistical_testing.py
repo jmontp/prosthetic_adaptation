@@ -12,11 +12,15 @@ from scipy.stats import f
 
 
 def calculate_f_score(unrestricted_RSS,restricted_RSS,p1,p2,n,ci=0.05,visualize=True):
+	
+
+	assert (p2 > p1)
+
 	#Calculate the f-score
 	f_score = ((restricted_RSS - unrestricted_RSS)/(p2-p1))/(unrestricted_RSS/(n - p2))
 	
 	if(visualize==True):
-		print("      f_score:       " + str(f_score))
+		print("F_score:          " + str(f_score))
 
 	#Get the critical f-score to validate
 	df1 = p2-p1
@@ -26,7 +30,7 @@ def calculate_f_score(unrestricted_RSS,restricted_RSS,p1,p2,n,ci=0.05,visualize=
 	critical_f_score = f.isf(ci, df1, df2)
 	
 	if(visualize):
-		print(" Critical F-score: " + str(critical_f_score))
+		print("Critical F-score: " + str(critical_f_score))
 
 	#Validate if this works
 	if(critical_f_score < f_score):

@@ -64,7 +64,7 @@ def get_trials_in_numpy(subject,joint):
 def get_phase_from_numpy(array):
     #This retruns the numpy array that has all the axis.
     #This essentially hides the ugly generator call
-    return np.concatenate(list(phi_generator(array.shape[0],150)),axis=0)
+    return np.concatenate(list(phi_generator(int(array.shape[0]/150),150)),axis=0)
 
 #This will return the step lengths for every trial
 def get_step_length(subject):

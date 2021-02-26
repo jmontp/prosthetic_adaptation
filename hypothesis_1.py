@@ -1,51 +1,11 @@
-from data_generators import get_subject_names
-from model_framework import Fourier_Basis, Polynomial_Basis, Bernstein_Basis, Kronecker_Model
-from model_fitting import generate_regression_matrices, least_squares_r
 from statistical_testing import calculate_f_score
-
 import numpy as np
-
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-#Enable print statements
-visualize = True
 
-#Get the joint that we want to generate regressors for
-joint = 'hip'
-#Get the names of the subjects
-subject_names = get_subject_names()
+from hypothesis_setup import *
 
-
-#Initialize the model that we are going to base the regressor on
-phase_model = Fourier_Basis(4,'phase')
-phase_dot_model = Polynomial_Basis(3, 'phase_dot')
-ramp_model = Polynomial_Basis(3, 'ramp')
-step_length_model = Polynomial_Basis(3,'step_length')
-model_hip = Kronecker_Model(phase_dot_model, ramp_model, step_length_model,phase_model)
-
-#Get the regressor matrix
-pickle_dict = generate_regression_matrices(model_hip, subject_names, joint)
-
-#Extract the output
-output_dict = pickle_dict['output_dict']
-regressor_dict = pickle_dict['regressor_dict']
-ξ_dict = {}
-
-for subject in subject_names:
-
-	#Calculate the least squares
-
-	#The expected hip value for the subject
-	Y = output_dict[subject]
-	#The model-regressor matrix for the subject
-	R = regressor_dict[subject]
-
-	#Store the xi for the person
-	ξ_dict[subject] = least_squares_r(Y,R)
-
-#Get the average model parameter vector
-ξ_avg = sum(ξ_dict.values())/len(ξ_dict.values())
 
 #Get the expected output, regressor matrix and optimal vector
 #make sure that the order is the same
@@ -62,10 +22,16 @@ est_ind = np.concatenate(est_ind_list, axis=0)
 #Calculate the variance for the restricted model (average gait model)
 residual_avg = Y - est_avg
 restricted_RSS = np.sum(np.power(residual_avg, 2))
+rms_error_avg = np.sqrt(np.mean(np.power(residual_avg,2)))
+print("RMS Error for average model: " + str(rms_error_avg))
+
 
 #Calculate the variance for the unrestricted model (individualized model)
 residual_ind = Y - est_ind
 unrestricted_RSS = np.sum(np.power(residual_ind, 2))
+rms_error_ind = np.sqrt(np.mean(np.power(residual_ind,2)))
+print("RMS Error for individualized model: " + str(rms_error_ind))
+
 
 #Calculate p1 and p2 based on the f-score 
 #Not sure how to set this up tbh
@@ -110,14 +76,14 @@ fig.add_trace(go.Scatter(x=x, y=plot_expected_y, name="Measured Hip Angle", line
 #Average Estimate
 fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y, name="Estimated Avg Hip Angle", line_color='green'), row=1, col=1)
 #Std deviation fill
-fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y + 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle + 1.9std dev", fill='tonexty', line_color='green'), row=1, col=1)
+fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y + 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle + 1.9std dev", fill=None, line_color='green'), row=1, col=1)
 fig.add_trace(go.Scatter(x=x, y=plot_estimated_avg_y - 1.9*phase_std_dev_avg_np, name="Estimated Avg Hip Angle - 1.9std dev", fill='tonexty', line_color='green'), row=1, col=1)
 
 
 #Individualized Estimate
 fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y, name="Estimated Ind Hip Angle", line_color='blue'), row=2, col=1)
 #Std deviation fill
-fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y + 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle + 1.9std dev", fill='tonexty', line_color='blue'), row=2, col=1)
+fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y + 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle + 1.9std dev", fill=None, line_color='blue'), row=2, col=1)
 fig.add_trace(go.Scatter(x=x, y=plot_estimated_ind_y - 1.9*phase_std_dev_ind_np, name="Estimated Ind Hip Angle - 1.9std dev", fill='tonexty', line_color='blue'), row=2, col=1)
 
 

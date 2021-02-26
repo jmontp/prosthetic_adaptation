@@ -1,15 +1,16 @@
 import numpy as np
 import math
 import pickle
-
 from os import path
-
 from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp, get_subject_names
 
+from numba import jit, cuda
+
+import h5py
 
 #Create a regressor matrix for the given output
 def calculate_regression_matrix(model, *data):
-	
+
 	#Get data size
 	rows = data[0].shape[0]
 	columns = model.size
@@ -20,11 +21,10 @@ def calculate_regression_matrix(model, *data):
 
 	#Create the regressor matrix by evaluating the zipped data
 	counter = 0
-	for row in zip(*data):
-		regressor_matrix[counter,:] = model.evaluate(*row)
+	for i in range(rows):
+		#row = [entry[i] for entry in data]
+		regressor_matrix[i,:] = model.evaluate(data[0][i],data[1][i],data[2][i],data[3][i])
 		#model.evaluate(*row,result_buffer=regressor_matrix[counter])
-
-		counter = counter + 1
 
 	#Rename
 	R = regressor_matrix
@@ -35,13 +35,16 @@ def calculate_regression_matrix(model, *data):
 #This will create a regression matrix for the subjects
 def generate_regression_matrices(model, subject_names, joint):
 
+
 	#Filename to save the regression matrix
-	#filename = "local-storage/"+str(model)+'.pickle'
-	filename = str(model)+'.pickle'
+	filename = "local-storage/"+str(model)+joint+'.pickle'
+	#filename = str(model)+'.pickle'
 
 	#If it already exists, then just load it in
 	if(path.exists(filename)):
 		return model_loader(filename)
+
+
 
 	#Initialize dictionaries
 	output_dict = {}
@@ -57,7 +60,6 @@ def generate_regression_matrices(model, subject_names, joint):
 		print("Subject " + subject)
 		#Add the expected output
 		output_dict[subject] = get_trials_in_numpy(subject,joint).ravel()
-
 		#Get the data for the subject
 		order_dict['phase'] = get_phase_from_numpy(output_dict[subject]).ravel()
 		order_dict['phase_dot'] = get_phase_dot(subject).ravel()
