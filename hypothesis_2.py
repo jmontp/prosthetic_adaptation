@@ -8,7 +8,7 @@ import numpy as np
 
 #Get the personalization map
 personalization_map = get_personalization_map(ξ_dict, regressor_dict, subject_names)
-#Initialize the gait fingerprint dictionary 
+
 gait_fingerprint_dict = {}
 
 
@@ -47,7 +47,7 @@ p1 = 0
 n = Y.shape[0]
 
 #Get the f-score and the critical f-score
-f_score, critical_f_score = calculate_f_score(unrestricted_RSS, restricted_RSS, p1, p2, n, visualize)
+f_score, critical_f_score = calculate_f_score(unrestricted_RSS, restricted_RSS, p1, p2, n)
 
 #We must have a better f_score for the base case
 assert(f_score > critical_f_score)
@@ -77,7 +77,7 @@ for i in range(2,10):
 	print("Restricted RSS: " + str(restricted_RSS) + " unrestricted RSS: " + str(unrestricted_RSS))
 
 	#Get the f-score and the critical f-score
-	f_score, critical_f_score = calculate_f_score(unrestricted_RSS, restricted_RSS, p1, p2, n, visualize)
+	f_score, critical_f_score = calculate_f_score(unrestricted_RSS, restricted_RSS, p1, p2, n)
 
 	if(f_score < critical_f_score):
 		print("The critical n is: " + str(i))

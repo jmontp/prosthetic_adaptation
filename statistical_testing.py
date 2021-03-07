@@ -25,7 +25,7 @@ def calculate_f_score(unrestricted_RSS,restricted_RSS,p1,p2,n,ci=0.05,visualize=
 	#Get the critical f-score to validate
 	df1 = p2-p1
 	df2 = n-p2
-
+	print("DF1: " + str(df1) + " DF2: " + str(df2) + " CI: " + str(ci))
 	#Critical F score
 	critical_f_score = f.isf(ci, df1, df2)
 	
