@@ -8,6 +8,11 @@ from numba import jit, cuda
 
 import h5py
 
+def calculate_regression_matrix_pandas(model, *data):
+	
+
+
+
 #Create a regressor matrix for the given output
 def calculate_regression_matrix(model, *data):
 
@@ -58,10 +63,10 @@ def generate_regression_matrices(model, subject_names, joint):
 	for subject in subject_names:
 
 		print("Subject " + subject)
-		#Add the expected output
-		output_dict[subject] = get_trials_in_numpy(subject,joint).ravel()
 		#Get the data for the subject
-		order_dict['phase'] = get_phase_from_numpy(output_dict[subject]).ravel()
+		output = get_trials_in_numpy(subject,joint).ravel()
+
+		order_dict['phase'] = get_phase_from_numpy(output).ravel()
 		order_dict['phase_dot'] = get_phase_dot(subject).ravel()
 		order_dict['step_length'] = get_step_length(subject).ravel()
 		order_dict['ramp'] = get_ramp(subject).ravel()
@@ -70,7 +75,9 @@ def generate_regression_matrices(model, subject_names, joint):
 		data = [order_dict[x] for x in order]
 
 		#Calculate the regression matrix
-		regressor_dict[subject] = calculate_regression_matrix(model, *data)
+		R = calculate_regression_matrix(model, *data)
+		
+		regressor_dict[subject] = (R.T@R, R.T@output)
 
 	print("Saving Model...")
 
@@ -86,6 +93,8 @@ def generate_regression_matrices(model, subject_names, joint):
 def least_squares_r(output, R):
 		return np.linalg.solve(R.T @ R, R.T @ output)
 
+def least_squares_b(RTR,RTY):
+	return np.linalg.solve(RTR,RTY)
 
 
 #Calculate the least squares based on the data
@@ -97,7 +106,7 @@ def least_squares(model, output, *data):
 	if isinstance(output,(np.ndarray)):
 		output = np.array(output)
 
-	return np.linalg.solve(R.T @ R, R.T @ output), R
+	return np.linalg.solve(R.T @ R, R.T @ output), R.T @ R, R.T @ output
 
 
 

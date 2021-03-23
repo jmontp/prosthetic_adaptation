@@ -9,12 +9,12 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 #H is the partial derivative of the model with respect to the state variables and the pca axis coefficient variables 
 #The partial derivative with respect to the state variable is the derivative of the function row for the row function vector for that particular state variable kroneckerd with he other normal funcitons
 #The partial derivative with respect to he pca axis is just the pca axis times the kronecker productl
-
-
+import pandas as pd
 import numpy as np
 import math
 import pickle
-
+import numba
+from numba import jit, vectorize
 from os import path
 
 #--------------------------
@@ -58,7 +58,7 @@ class Polynomial_Basis(Basis):
 	#This function will evaluate the model at the given x value
 	def evaluate(self,x):
 		#result = [math.pow(x,i) for i in range(0,self.n)]
-		return np.power(np.full((1,self.n),x),np.arange(self.n))
+		return np.power(np.repeat(x,self.n,axis=1),np.arange(self.n))
 
 	#This function will evaluate the derivative of the model at the given 
 	# x value
@@ -79,10 +79,10 @@ class Fourier_Basis(Basis):
 
 	#This function will evaluate the model at the given x value
 	def evaluate(self,x):
-		l = np.arange(1,self.n)
-		result = np.ones(2*self.n-1)
-		result[1:self.n] = np.cos(2*np.pi*l*x)
-		result[self.n:] =  np.sin(2*np.pi*l*x)
+		l = np.arange(1,self.n).reshape(1,-1)
+		result = np.ones((x.shape[0],2*self.n-1))
+		result[:,1:self.n] = np.cos(2*np.pi*x @ l)
+		result[:,self.n:] =  np.sin(2*np.pi*x @ l)
 		return result
 
 
@@ -112,6 +112,8 @@ class Bernstein_Basis(Basis):
 		#raise NotImplementedError "Bernstain Basis derivative not implmented"
 		pass
 
+
+
 #Model Object:
 # list of basis objects
 # string description
@@ -120,12 +122,13 @@ class Bernstein_Basis(Basis):
 # coefficient_list - list of coefficients for each pca_axis
 #--------------------------
 class Kronecker_Model:
-	def __init__(self, *funcs):
+	def __init__(self, output_name, *funcs):
 		self.funcs = funcs
 
 		#Calculate the size of the parameter array
 		#Additionally, pre-allocate arrays for kronecker products intermediaries 
 		# to speed up results
+		self.output_name = output_name
 		self.alocation_buff = []
 		self.order = []
 		size = 1;
@@ -142,65 +145,83 @@ class Kronecker_Model:
 
 		self.size = size
 		self.num_states = len(funcs)
-		self.pca_axis = []
-		self.pca_coefficients = []
+		self.subjects = {}
         #Todo: Add average pca coefficient
         
     
+	def add_subject(self,subjects):
+		for subject,filename in subjects:
+			self.subjects[subject] = \
+				{'filename': filename, \
+				 'dataframe': pd.read_parquet(filename, columns=[self.output_name,*self.order]), \
+				 'optimal_xi': [], \
+				 'least_squares_info': [], \
+				 'pca_axis': [], \
+				 'pca_coefficients': [] \
+			 }
+
 	#Evaluate the models at the function inputs that are received
 	#The function inputs are expected in the same order as they where defined
 	#Alternatively, you can also input a dictionary with the var_name as the key and the 
 	# value you want to evaluate the function as the value
 	def evaluate(self, *function_inputs,partial_derivative=None, result_buffer=None):
 		
-		#Crop so that you are only using the number of states and not the gait fingerprint
-		#states = function_inputs[:self.num_states]
-		# amount_of_states = len(states)
-		# #Verify that you have the correct input 
-		# if(amount_of_states != len(self.funcs)):
-		# 	err_string = 'Wrong amount of inputs. Received:'  + str(len(states)) + ', expected:' + str(len(self.funcs))
-		# 	raise ValueError(err_string)
-
-		#if(isinstance(states,dict) == False and isinstance(states,list) == False): 
-		#	raise TypeError("Only Lists and Dicts are supported, you used:" + str(type(states)))
-
-		#There are two behaviours: one for list and one for dictionary
-		#List expects the same order that you received it in
-		#Dictionary has key values for the function var names
-
 		result = np.array([1])
-		# counter = 0
-
-		#Assume that you get a list which means that everything is in order
-		# for values in zip(states,self.funcs,self.alocation_buff):
+		
 		for i in range(self.num_states):
-			# curr_val, curr_func, curr_buf = values
-			
-			# #If you get a dictionary, then get the correct input for the function
-			# if( isinstance(states,dict) == True):
-			# 	#Get the value from the var_name in the dictionary
-			# 	curr_val = states[curr_func.var_name]
 
 			#Verify if we want to take the partial derivative of this function
-			# if(partial_derivative is not None and curr_func.var_name in partial_derivative):
-			# 	apply_derivative = True
-			# else: 
-			# 	apply_derivative = False
+			if(partial_derivative is not None and curr_func.var_name in partial_derivative):
+				apply_derivative = True
+			else: 
+				apply_derivative = False
 
-			#Add to counter to see if we are in the last variable
-			# counter += 1
-			
-			#Assign the final value directly to the output
-			# if(result_buffer is not None and counter == amount_of_states):
-				#fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), result_buffer, True)
+
 			result=fast_kronecker(result,self.funcs[i].evaluate_conditional(function_inputs[i],False))#, self.alocation_buff[i], False)
-			# else:
-			# 	#Since there isnt an implementation for doing kron in one shot, do it one by one
-			# 	result = fast_kronecker(result,curr_func.evaluate_conditional(curr_val,apply_derivative), curr_buf, False)
-
-		#Only return if we are not using a result buffer
-		# if(result_buffer is None):
+			
 		return result.copy()
+
+	def evaluate_pandas(self, dataframe, partial_derivative=None):
+		#Todo: Implement partial derivatives
+		#Can be done by creating a new list of functions and adding partial derivatives when needed
+		return numpy_kronecker(dataframe,self.funcs)
+
+	#Future optimizations
+	#@numba.jit(nopython=True, parallel=True)
+	def least_squares(self,dataframe,output,splits=100):
+
+		RTR = np.zeros((self.size,self.size))
+		yTR = np.zeros((1,self.size))
+		RTy = np.zeros((self.size,1))
+		yTy = 0
+		for sub_dataframe in np.array_split(dataframe,splits):
+			R = numpy_kronecker(sub_dataframe,self.funcs)
+			#nans = sub_dataframe[output].isnull().sum()
+			#print(nans)
+			#print(sub_dataframe.shape[0])
+			y = sub_dataframe[output].values[:,np.newaxis]
+			RTR_ = R.T @ R
+			
+			RTR += RTR_
+			yTR += y.T @ R
+			RTy += R.T @ y
+			yTy += y.T @ y
+
+		return np.linalg.solve(RTR, RTy), RTR, RTy, yTR, yTy
+
+
+	def fit_subjects(self):
+
+		for name,subject_dict in self.subjects.items():
+			print("Doing " + name)
+			print(subject_dict['filename'])
+			data = subject_dict['dataframe']
+			output = self.least_squares(data,self.output_name)
+			subject_dict['optimal_xi'] = output[0]
+			subject_dict['least_squares_info'] = output[1:]
+
+
+
 
 	#Todo: Need to add functionality for the models pca_axis list
 	#Dont know if I want to have it run least squares in the initialization
@@ -243,35 +264,31 @@ class Kronecker_Model:
 		return self.order
 
 
+def optimized_least_squares(output,input,model_size,splits=10):
+	RTR = np.zeros((model_size,model_size))
+	yTR = np.zeros((1,model_size))
+	RTy = np.zeros((model_size,1))
+	yTy = 0
+	for sub_dataframe in np.array_split(input,splits):
+		R = numpy_kronecker(sub_dataframe,self.funcs)
+		#nans = sub_dataframe[output].isnull().sum()
+		#print(nans)
+		#print(sub_dataframe.shape[0])
+		y = sub_dataframe[output].values[:,np.newaxis]
+		RTR_ = R.T @ R
+		
+		RTR += RTR_
+		yTR += y.T @ R
+		RTy += R.T @ y
+		yTy += y.T @ y
+
+	return np.linalg.solve(RTR, RTy), RTR, RTy, yTR, yTy
+
+
 #Evaluate model 
 def model_prediction(model,ξ,*input_list,partial_derivative=None):
 	result = [model.evaluate(*function_inputs,partial_derivative=partial_derivative)@ξ for function_inputs in zip(*input_list)]
 	return np.array(result)
-
-
-
-##LOOK HERE 
-##There is a big mess with how the measurement model is storing the gait fingerprint coefficients
-##They should really just be part of the state vector, the AXIS should be stored internally since that is 
-## fixed
-class Measurement_Model():
-	def __init__(self,*models):
-		self.models = models
-
-	def evaluate_h_func(self,*states):
-		#get the output
-		result = [model.evaluate_scalar_output(*states) for model in self.models]
-		return np.array(result)
-
-	def evaluate_dh_func(self,*states):
-		result = []
-		for model in self.models:
-			state_derivatives = [model.evaluate_scalar_output(*states,partial_derivative=func.var_name) for func in model.funcs]
-			gait_fingerprint_derivatives = [model.evaluate(*states)@axis for axis in model.pca_axis]
-			total_derivatives = state_derivatives + gait_fingerprint_derivatives
-			result.append(total_derivatives)
-
-		return np.array(result)
 
 
 
@@ -307,138 +324,16 @@ def fast_kronecker(a,b,buff=None,reshape=False):
 		return np.kron(a,b)
 
 
+#@vectorize(nopython=True)
+def numpy_kronecker(dataframe,funcs):
+	rows = dataframe.shape[0]
+	output = np.array(1).reshape(1,1,1)
+	for func in funcs:
+		output = (output[:,np.newaxis,:]*func.evaluate(dataframe[func.var_name].values[:,np.newaxis])[:,:,np.newaxis]).reshape(rows,-1)
+		print("I'm alive, size = " + str(output.shape))
+
+	return output
+
 ####################################################################################
 #//////////////////////////////////////////////////////////////////////////////////#
 ####################################################################################
-
-#Test everything out
-def unit_test():
-
-	phase = polynomial_basis(2,'phase')
-	ramp = polynomial_basis(2,'ramp')
-
-	print(phase)
-	print(ramp)
-
-	model = kronecker_generator(phase, ramp)
-	phase_sample = 0.1
-	ramp_sample = 0.2
-	output = model(phase_sample, ramp_sample)
-	output = model(phase_sample, ramp_sample)
-	output = model(phase_sample, ramp_sample)
-	output = model(phase_sample, ramp_sample)
-
-	print(output)
-
-	#This is the expected kronecker product
-	test = [1, ramp_sample, phase_sample, phase_sample*ramp_sample]
-	print(test-output)
-
-	model_saver('./SavedModel',model)
-
-	model2 = model_loader('./SavedModel')
-
-	output2 = model2(phase_sample, ramp_sample)
-	print(output2)
-
-	print(output-output2)
-
-def numpy_testing():
-
-	start = timeit.default_timer()
-
-	phase = 2
-	ramp = 1
-
-	phase_model = (polynomial_basis,20)
-	ramp_model = (fourier_series, 20)
-
-	model,size = kronecker_generator(phase_model, ramp_model)
-	for i in range(1000000):
-		result = model(phase,ramp).T
-		print(i)
-
-	print(result)
-
-	stop = timeit.default_timer()
-
-	print('Time: ', stop - start)  
-
-
-def least_squares_testing():
-	phase = np.array([72,2,3])
-	ramp = np.array([4,54,6])
-
-	output = np.array([1,2,3])
-
-	phase_model = Polynomial_Basis(2,'phase')
-	ramp_model = Polynomial_Basis(2,'ramp')
-
-	model = Kronecker_Model([phase_model, ramp_model])
-
-	xi, _ = least_squares(model, output, phase, ramp)
-
-	print(xi.shape)
-
-def object_testing():
-	phase = Fourier_Basis(5,'phase')
-	ramp = Polynomial_Basis(3,'ramp')
-
-	test_num = 2
-	phase_eval1 = phase.evaluate(test_num)
-
-	#save basis
-	save_file = 'test_file_saver.txt'
-	with open(save_file,'wb') as file:
-		pickle.dump(phase,file)
-
-	#load the basis
-	with open(save_file,'rb') as file:
-		phase2 = pickle.load(file)
-
-	import os
-	os.remove(save_file)
-
-	phase_eval2 = phase2.evaluate(test_num)
-
-	print("Phase_eval1 = " + str(phase_eval1))
-	print("Phase_eval2 = " + str(phase_eval2))
-
-
-	model = Kronecker_Model([ramp,phase])
-	inputs = [1,2]
-	inputs_dict = {'phase':2,'ramp': 1}
-
-	model_out1 = model.evaluate(inputs)
-	model_out2 = model.evaluate(inputs_dict)
-
-	print("Model with list input vs with dict: " + str(model_out1-model_out2))
-
-	with open(save_file,'wb') as file:
-		pickle.dump(model,file)
-
-	#load the basis
-	with open(save_file,'rb') as file:
-		model2 = pickle.load(file)
-
-	import os
-	os.remove(save_file)
-
-	model2_out = model2.evaluate(inputs)
-	print("Model recovered vs original model: " + str(model2_out-model_out1))
-
-	model3 = Kronecker_Model([ramp])
-
-	model3_out1 = model3.evaluate([2])
-	model3_out2 = model3.evaluate([2],['ramp'])
-
-	print("Model without derivative:" + str(model3_out1))
-	print("Model with derivative:" + str(model3_out2))
-
-if __name__=='__main__':
-	#All the test cases are probably broken 
-	#object_testing()
-	#unit_test()
-	#numpy_testing()
-	#least_squares_testing()
-	pass

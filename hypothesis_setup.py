@@ -1,6 +1,6 @@
 from data_generators import get_subject_names
 from model_framework import Fourier_Basis, Polynomial_Basis, Bernstein_Basis, Kronecker_Model
-from model_fitting import generate_regression_matrices, least_squares_r
+from model_fitting import generate_regression_matrices, least_squares_r, least_squares_b
 from statistical_testing import calculate_f_score
 
 import numpy as np
@@ -33,13 +33,11 @@ for subject in subject_names:
 
 	#Calculate the least squares
 
-	#The expected hip value for the subject
-	Y = output_dict[subject]
 	#The model-regressor matrix for the subject
-	R = regressor_dict[subject]
+	RTR,RTY = regressor_dict[subject]
 
 	#Store the xi for the person
-	ξ_dict[subject] = least_squares_r(Y,R)
+	ξ_dict[subject] = least_squares_b(RTR,RTY)
 
 #Get the average model parameter vector
 ξ_avg = sum(ξ_dict.values())/len(ξ_dict.values())
