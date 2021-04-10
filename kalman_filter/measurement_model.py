@@ -1,7 +1,15 @@
+import numpy as np
+
 ##LOOK HERE 
 ##There is a big mess with how the measurement model is storing the gait fingerprint coefficients
 ##They should really just be part of the state vector, the AXIS should be stored internally since that is 
 ## fixed
+
+
+#Measurement Model = []
+
+
+
 class Measurement_Model():
 	def __init__(self,*models):
 		self.models = models
@@ -10,6 +18,8 @@ class Measurement_Model():
 		#get the output
 		result = [model.evaluate_scalar_output(*states) for model in self.models]
 		return np.array(result)
+
+
 
 	def evaluate_dh_func(self,*states):
 		result = []
