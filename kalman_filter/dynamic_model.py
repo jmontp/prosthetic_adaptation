@@ -27,45 +27,70 @@ import matplotlib.pyplot as plt
 
 class Dynamic_Model:
 
-	#Initial States is a dictionary that will contain a variable name
-	# for every state and the initial value for that state
-	def __init__(self):
-		pass
+    #Initial States is a dictionary that will contain a variable name
+    # for every state and the initial value for that state
+    def __init__(self):
+        pass
 
-	def get_predicted_state(self,current_state,time_step,control_input_u):
-		pass
+    def get_predicted_state(self,current_state,time_step,control_input_u):
+        pass
 
 
 
 class Gait_Dynamic_Model(Dynamic_Model):
 
-	def __init__(self):
-		pass
+    def __init__(self):
+        pass
 
-	#The gait dynamics are an integrator for phase that take into consideration 
-	# the phase_dot and the timestep. It is assumed that the phase_dot is the 
-	# second element in the state vector
-	def f_jacobean(self, current_states, time_step):
-		amount_of_states = current_states.shape[0]
+    #The gait dynamics are an integrator for phase that take into consideration 
+    # the phase_dot and the timestep. It is assumed that the phase_dot is the 
+    # second element in the state vector
+    def f_jacobean(self, current_state, time_step):
+        #print(current_state)
+        amount_of_states = current_state.shape[0]
+        #print(amount_of_states)
 
-
-		#All the states will stay the same except for the first one
-		jacobean = np.eye(amount_of_states)
-
-
-		#Add the integrator
-		jacobean[0][1] = time_step
-
-		return jacobean
-
-	#This is a linar function based on the jacobean its pretty straighforward to calculate
-	def f_function(self, current_states, time_step):
-		#Essentially we want to calculate dot x = Ax
+        #All the states will stay the same except for the first one
+        jacobean = np.eye(amount_of_states)
 
 
-		jacobean = self.f_jacobean(current_states,time_step)
+        #Add the integrator corresponding to phase dot
+        jacobean[0,1] = time_step
 
-		return jacobean @ current_states
+        return jacobean
+
+    #This is a linar function based on the jacobean its pretty straighforward to calculate
+    def f_function(self, current_state, time_step):
+        
+        #Essentially we want to calculate dot x = Ax
+        #jacobean = self.f_jacobean(current_state,time_step)
+
+        #current_state_vector = current_state.values.T
+        
+        #Copy the column name
+        #result = current_state.copy
+
+
+        #Set the result
+        #result[0] = jacobean @ current_state_vector
+
+        #compact implementation
+        #result = current_state.copy()
+
+        #result['phase'] = result['phase'] + result['phase_dot']*time_step
+        current_state[0,0] = current_state[0,0] + current_state[1,0]*time_step
+        
+        integer_part = np.floor(np.abs(current_state[0,0]))
+        
+        #Reset if you get over one
+        if (current_state[0,0] >= 1.0):
+            current_state[0,0] -= integer_part
+        
+        #This can occur with negative phase dot    
+        if (current_state[0,0] < 0.0):
+            current_state[0,0] += integer_part + 1
+        
+        return current_state
 
 
 
@@ -74,45 +99,39 @@ class Gait_Dynamic_Model(Dynamic_Model):
 #This model test does not work anymore
 
 def dynamic_model_unit_test():
+    import pandas as pd
+    #Set the integration timestep
+    time_step = 0.1
 
-	#Set the integration timestep
-	time_step = 0.1
+    #Set an initial state
+    initial_state_dict = {'phase': [0],
+                    'phase_dot': [1],
+                    'step_length': [1],
+                    'ramp': [0],
+                    'gf1': [0],
+                    'gf2': [0],
+                    'gf3': [0],
+                    'gf4': [0]}
+    
+    initial_state = pd.DataFrame.from_dict(initial_state_dict)
+    print(initial_state)
+    gait_model = Gait_Dynamic_Model()
 
-	#Set an initial state
-	initial_states = np.array([1,1,0,0,0])
+    state_history = initial_state.copy()
+    
+    current_state = initial_state.copy()
 
-	#Get the amount of states
-	num_states = initial_states.shape[0]
+    #Iterate to see how the state evolves over time
+    for i in range(100):
+        current_state = gait_model.f_function(current_state,time_step)
+        state_history = state_history.append(current_state, ignore_index=True)
 
-	#Set the covariance to zero since we are very sure 
-	#that the state is where we say that it is
-	initial_covariance = np.zeros((num_states,num_states))
+    time = np.linspace(0,time_step*100,101)
 
-	gait_model = Gait_Dynamic_Model()
-
-
-	state_list = []
-	covariance_list = []
-
-	state_list.append(initial_states)
-	current_state = initial_states
-
-	covariance_list.append(initial_covariance)
-	current_covariance = initial_covariance
-
-	#Iterate to see how the state evolves over time
-	for i in range(100):
-		current_state, current_covariance = gait_model.get_predicted_state(current_state, current_covariance,time_step)
-		state_list.append(current_state)
-		covariance_list.append(current_covariance)
-
-	time = np.linspace(0,time_step*100,101)
-
-	state_array = np.array(state_list)
-	print(state_array[0,:])
-	plt.plot(state_array)
-	plt.show()
+    print(state_history)
+    plt.plot(state_history['phase'])
+    plt.show()
 
 
 if __name__ == '__main__':
-	dynamic_model_unit_test()
+    dynamic_model_unit_test()
