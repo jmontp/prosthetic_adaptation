@@ -64,11 +64,6 @@ class R01_Dataset:
 
 
 
-
-
-
-
-
 def flatten(d, parent_key='', sep='/'):
     items = []
     for k,v in d.items():
@@ -428,7 +423,7 @@ def get_end_points_R01(d,out_dict,parent_key='', sep='/',num_last_keys=2):
 def test_flatten_R01(): 
     pass
     #%%
-    file_name = './local-storage/Normalized.mat'
+    file_name = '../local-storage/Normalized.mat'
     data = h5py.File(file_name, 'r')['Normalized']['AB01']
     
     # out = flatten_list(data)
