@@ -43,7 +43,7 @@ def get_end_points(d,out_dict,parent_key='', sep='/',num_last_keys=4):
                 
                 
 def quick_flatten_dataport(): 
-    
+    pass
     #%%
     file_name = '../local-storage/InclineExperiment.mat'
     h5py_file = h5py.File(file_name)['Gaitcycle']
@@ -53,8 +53,14 @@ def quick_flatten_dataport():
         save_name = '../local-storage/test/dataport_flattened_partial_{}.parquet'.format(subject)
         
         @lru_cache(maxsize=5)
-        def get_speed(trial):
+        def get_time(trial,leg):
+            return data[trial]['cycles'][leg]['time']
+        @lru_cache(maxsize=5)
+        def get_ramp(trial):
             return data[data[trial]['description'][1][1]][0][0]
+        @lru_cache(maxsize=5)
+        def get_speed(trial):
+            return data[data[trial]['description'][1][0]][0][0]
         
         # out = flatten_list(data)
         # print(len(out))
@@ -62,7 +68,6 @@ def quick_flatten_dataport():
         output_dict = {}
         get_end_points(data,output_dict)
         #print(output_dict)
-        output_dataframe = DataFrame()
         
         data_frame_dict = {}
         
@@ -91,10 +96,7 @@ def quick_flatten_dataport():
                     trials = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[0]]*dataset.shape[0]*dataset.shape[1] ]
                     legs = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[-3]]*dataset.shape[0]*dataset.shape[1] ]
                     #Yikes and then some
-                    @lru_cache(maxsize=5)
-                    def get_time(trial,leg):
-                        return data[trial]['cycles'][leg]['time']
-                    
+                   
                     phase_dot_list = []
                     step_length_list = []
                     for experiment_name in endpoint_list[0]:
@@ -104,8 +106,9 @@ def quick_flatten_dataport():
                             
                             time = data[trial]['cycles'][leg]['time']
                             speed = get_speed(trial)
-                            phase_dot_list.append(np.repeat(1/(time[:,-1]-time[:,0]), 150))
-                            step_length_list.append(np.repeat(speed*(time[:,-1]-time[:,0]), 150))
+                            time_delta = (time[:,-1]-time[:,0])
+                            phase_dot_list.append(np.repeat(1/time_delta, 150))
+                            step_length_list.append(np.repeat(speed*time_delta, 150))
                             
                 arr = np.concatenate(endpoint_list[1],axis=0).flatten()
                 len_arr = arr.shape[0]
@@ -124,15 +127,10 @@ def quick_flatten_dataport():
                 #They way that this is formatted, there is a data pointer and 
                 # the data itself. The first access to "data" gets the pointer
                 # and the second gets the incline
-                @lru_cache(maxsize=5)
-                def get_ramp(trial):
-                    return data[data[trial]['description'][0][1]][0][0]
-                
+               
                 df['ramp'] = [ get_ramp(trial) for trial in trials]
                 
-                @lru_cache(maxsize=5)
-                def get_speed(trial):
-                    return data[data[trial]['description'][1][1]][0][0]
+             
     
                 df['speed'] = [get_speed(trial) for trial in trials]
                 df['trial'] = trials
@@ -142,7 +140,10 @@ def quick_flatten_dataport():
                 df['phase_dot'] = np.concatenate(phase_dot_list, axis = 0)
                 df['step_length'] = np.concatenate(step_length_list,axis=0)
                 df.to_parquet(save_name)
-
+        
+        #Uncomment break to just get one person
+        #break
+#%%
 def add_global_shank_angle():
     pass
     #%%
@@ -154,7 +155,7 @@ def add_global_shank_angle():
     for subject in subjects:
         df = pd.read_parquet(subject[1])
         print(df.columns)
-        df.drop(columns=['jointangle_shank_x','jointangle_shank_y','jointangle_shank_z'])
+        #df.drop(columns=['jointangle_shank_x','jointangle_shank_y','jointangle_shank_z'])
         df['jointangles_shank_x'] = df['jointangles_foot_x'] +  df['jointangles_ankle_x']
         df['jointangles_shank_y'] = df['jointangles_foot_y'] +  df['jointangles_ankle_y']
         df['jointangles_shank_z'] = df['jointangles_foot_z'] +  df['jointangles_ankle_z']
@@ -163,4 +164,5 @@ def add_global_shank_angle():
 
 #%%            
 if __name__ == '__main__':
+    quick_flatten_dataport()
     add_global_shank_angle()
