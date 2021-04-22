@@ -45,6 +45,7 @@ class Kronecker_Model:
         self.size = size
         self.num_states = len(funcs)
         self.subjects = {}
+        self.one_left_out_subjects = {}
         self.time_derivative = time_derivative
         self.num_gait_fingerprint = num_gait_fingerprint
         self.gait_fingerprint_names = ["gf"+str(i) for i in range(1,num_gait_fingerprint+1)]
@@ -357,18 +358,6 @@ class Kronecker_Model:
         pca.fit(XI_0) 
         self.pca_result = pca
         
-        #Get how many personalization coefficients we want
-        # if n == None:
-        #     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-        #     i = 0
-        #     for element in cumulative_variance:
-        #         if element > cum_var:
-        #             i+=1
-        #             break
-        #         else:
-        #             i+=1
-        #     n = i
-        
         self.personalization_map = (pca.components_[:n,:]).T
         self.personalization_map_scaled = self.scaled_pca()
         
@@ -379,19 +368,47 @@ class Kronecker_Model:
             RTy_prime = (self.personalization_map_scaled.T) @ RTy-(self.personalization_map_scaled.T) @ RTR @ self.inter_subject_average_fit
             
             subject_dict['gait_coefficients'] = np.linalg.solve(RTR_prime,RTy_prime)
+            
+            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
+            RTR_prime = (self.personalization_map.T) @ RTR @ self.personalization_map
+            RTy_prime = (self.personalization_map.T) @ RTy-(self.personalization_map.T) @ RTR @ self.inter_subject_average_fit
+            
+            subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
+
+            
+    def add_left_out_subject(self,subjects):
+        for subject,filename in subjects:
+            self.one_left_out_subjects[subject] = \
+                {'filename': filename, \
+                 'dataframe': pd.read_parquet(filename, columns=[self.output_name,*self.order]), \
+                 'optimal_xi': [], \
+                 'least_squares_info': [], \
+                 'pca_axis': [], \
+                 'pca_coefficients': [] \
+             }
+                    
+            subject_dict = self.one_left_out_subjects[subject]        
+            print("One left out fit: " + subject)
+            #print(subject_dict['filename'])
+            data = subject_dict['dataframe']
+            output = self.least_squares(data,self.output_name)
+            subject_dict['optimal_xi'] = output[0]
+            subject_dict['num_rows'] = output[1]
+            subject_dict['least_squares_info'] = output[2:]
+
+            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
+            RTR_prime = (self.personalization_map_scaled.T) @ RTR @ self.personalization_map_scaled
+            RTy_prime = (self.personalization_map_scaled.T) @ RTy-(self.personalization_map_scaled.T) @ RTR @ self.inter_subject_average_fit
+            
+            subject_dict['gait_coefficients'] = np.linalg.solve(RTR_prime,RTy_prime)
+            
+            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
+            RTR_prime = (self.personalization_map.T) @ RTR @ self.personalization_map
+            RTy_prime = (self.personalization_map.T) @ RTy-(self.personalization_map.T) @ RTR @ self.inter_subject_average_fit
+            
+            subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
 
 
-    def sum_pca_axis(self,pca_coefficients):
-        if(len(self.pca_axis) != len(pca_coefficients)):
-            err_string = 'Wrong amount of inputs. Received:'  + str(len(pca_coefficients)) + ', expected:' + str(len(self.pca_axis))
-            raise ValueError(err_string)
-
-        return sum([axis*coeff for axis,coeff in zip(self.pca_axis,pca_coefficients)])
-
-    def evaluate_scalar_output(self,*function_inputs,partial_derivative=None):
-        states = function_inputs[:self.num_states]
-        pca_coefficients = function_inputs[self.num_states:]
-        return self.evaluate(*states,partial_derivative=partial_derivative) @ self.sum_pca_axis(pca_coefficients).T
 
     def __str__(self):
         output = ''
@@ -412,33 +429,6 @@ class Kronecker_Model:
 
     def get_order(self):
         return self.order
-
-
-# def optimized_least_squares(output,input,model_size,splits=10):
-#     RTR = np.zeros((model_size,model_size))
-#     yTR = np.zeros((1,model_size))
-#     RTy = np.zeros((model_size,1))
-#     yTy = 0
-#     for sub_dataframe in np.array_split(input,splits):
-#         R = numpy_kronecker(sub_dataframe,self.funcs)
-#         #nans = sub_dataframe[output].isnull().sum()
-#         #print(nans)
-#         #print(sub_dataframe.shape[0])
-#         y = sub_dataframe[output].values[:,np.newaxis]
-#         RTR_ = R.T @ R
-        
-#         RTR += RTR_
-#         yTR += y.T @ R
-#         RTy += R.T @ y
-#         yTy += y.T @ y
-
-#     return np.linalg.solve(RTR, RTy), RTR, RTy, yTR, yTy
-
-
-#Evaluate model 
-def model_prediction(model,ξ,*input_list,partial_derivative=None):
-    result = [model.evaluate(*function_inputs,partial_derivative=partial_derivative)@ξ for function_inputs in zip(*input_list)]
-    return np.array(result)
 
 
 #@vectorize(nopython=True)
@@ -484,7 +474,7 @@ def train_models():
     from function_bases import Fourier_Basis, Polynomial_Basis
     import copy
     
-    train_models = False
+    train_models = True
     if train_models == True:
         #Determine the phase models
         phase_model = Fourier_Basis(10,'phase')
@@ -493,14 +483,17 @@ def train_models():
         ramp_model = Polynomial_Basis(4,'ramp')
     
         # #Get the subjects
-        subjects = [('AB10','../local-storage/test/dataport_flattened_partial_AB10.parquet')]
+        left_out = [('AB10','../local-storage/test/dataport_flattened_partial_AB10.parquet')]
+        subjects = []
         for i in range(1,10):
             subjects.append(('AB0'+str(i),'../local-storage/test/dataport_flattened_partial_AB0'+str(i)+'.parquet'))
 
         model_foot = Kronecker_Model('jointangles_foot_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5)
+        model_foot.add_left_out_subject(left_out)
         model_saver(model_foot,'foot_model.pickle')
         
         model_shank = Kronecker_Model('jointangles_shank_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5)
+        model_shank.add_left_out_subject(left_out)
         model_saver(model_shank,'shank_model.pickle')
     
         model_foot_dot = copy.deepcopy(model_foot)
@@ -535,11 +528,26 @@ def get_rmse(arr1,arr2):
         arr2 = arr2.values[:,np.newaxis]
         
     return np.sqrt(np.mean(np.power((arr1-arr2),2)))
+
+def trial_to_string(trial,joint=None):
+    sign = 1
+    split = trial.split('i')
+    if(len(split)==1):
+        sign = -1
+        split = trial.split('d')
+
+    incline = sign*float(split[1].replace('x','.'))
+    speed = float(split[0][1:].replace('x','.'))
     
+    if(joint is not None):
+        output = "{} Angle while walking at {:.1f}m/s with {:.1f}-deg incline".format(joint,speed,incline)
+    else:
+        output = "Walking at {:.1f}m/s with {:.1f}-deg incline".format(speed,incline)
+    return output
 #%%
 def plot_model():
     #%%
-    %matplotlib qt
+    #%matplotlib qt
 
     model_foot = model_loader('foot_model.pickle')
     model_shank = model_loader('shank_model.pickle')
@@ -552,103 +560,95 @@ def plot_model():
     #phase_rate = trial_df['phase_dot'].values[:]
     #foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate/150)
     
-    subject = 'AB02'
+    #Variables
+    ##########################################################################
+    subject = 'AB10'
     model = model_foot
     joint_angle = 'jointangles_foot_x'
-    subject_dict = model.subjects[subject]
+    joint_str = joint_angle.split('_')[1].capitalize()
+    ##########################################################################
     
+    try:
+        subject_dict = model.subjects[subject]
+    except KeyError:
+        print("Not in subject dict, checking left out dict")
+        subject_dict = model.one_left_out_subjects[subject]
+
+    
+    #Get constants
     inter_subject_average_fit = model.inter_subject_average_fit
     personalization_map_scaled = model.personalization_map_scaled
+    bad_personalization_map_scaled = model.personalization_map
     gait_fingerprints = subject_dict['gait_coefficients']
+    bad_gait_fingerprints = subject_dict['gait_coefficients_unscaled']
+    optimal_fit = subject_dict['optimal_xi']
     
     df = pd.read_parquet(subject_dict['filename'])
     
-    
-    #Level ground walking
-    #Get measured data
-    level_ground_df = df[df['trial'] == 's1i0']
-    level_ground_foot_angles = level_ground_df[joint_angle]
-    lg_foot_mean, lg_foot_std_dev = get_mean_std_dev(level_ground_foot_angles)
-    
-    #Get regressor rows
-    lg_foot_angle_evaluated = model.evaluate_pandas(level_ground_df)
-    
-    #Optimal fit
-    lg_optimal_estimate = lg_foot_angle_evaluated @ model.subjects[subject]['optimal_xi']
-    lg_optimal_mean, lg_optimal_std_dev = get_mean_std_dev(lg_optimal_estimate)
-    lg_optimal_rmse = get_rmse(lg_optimal_estimate,level_ground_foot_angles)
-    
-    #Intersubject fit
-    lg_inter_subject_estimate = lg_foot_angle_evaluated @ inter_subject_average_fit
-    lg_inter_subject_mean,  lg_inter_subject_std_dev = get_mean_std_dev(lg_optimal_estimate)
-    lg_inter_subject_rmse = get_rmse(lg_inter_subject_estimate,level_ground_foot_angles)
-
-    #Gait fingerprint fit
-    lg_gait_fingerprint_estimate = lg_foot_angle_evaluated @ (inter_subject_average_fit + personalization_map_scaled @ gait_fingerprints)
-    lg_gait_fingerprint_mean, lg_gait_fingerprint_std_dev = get_mean_std_dev(lg_gait_fingerprint_estimate)
-    lg_gait_fingerprint_rmse = get_rmse(lg_gait_fingerprint_estimate,level_ground_foot_angles)
-
-
-    #Incline walking
-    #Get measured data
-    incline_df = df[df['trial'] == 's0x8i10']
-    incline_foot_angles = incline_df[joint_angle]
-    i_foot_mean, i_foot_std_dev = get_mean_std_dev(incline_foot_angles)
-    
-    #Get regressor rows
-    i_foot_angle_evaluated = model.evaluate_pandas(incline_df)
-    
-    #Evaluate with optimal fit
-    i_optimal_estimate = i_foot_angle_evaluated @ model.subjects[subject]['optimal_xi']
-    i_optimal_mean, i_optimal_std_dev = get_mean_std_dev(i_optimal_estimate)
-
-    #Evaluate with intersubject average
-    i_inter_subject_estimate = i_foot_angle_evaluated @ inter_subject_average_fit
-    
-    
-    #inter_subject_average = model_foot.
-    
-    fast_walk_df = df[df['trial'] == 's1x2i5']
-    fast_walk_foot_angles = fast_walk_df[joint_angle]
-    fw_foot_mean, fw_foot_std_dev = get_mean_std_dev(fast_walk_foot_angles)
-
+    #trials = ['s1i0','s0x8i10','s1x2i5','s1x2d10','s0x8d7x5']
+    #trials = ['s1x2i7x5']
+    trials = list(df.trial.unique())[:8]
     
     points_per_step = 150
     x = np.linspace(0,1+1/points_per_step,points_per_step)
     
-    fig, ax = plt.subplots(1,3, sharey ='all')
+    fig, ax = plt.subplots(1,len(trials), sharex='all',sharey ='all')
+    
+    if (len(trials)==1):
+        ax = [ax]
+    
+    for i,trial in enumerate(trials):
+        #Level ground walking
+        #Get measured data
+        trial_df = df[df['trial'] == trial]
+        measured_angles = trial_df[joint_angle]
+        foot_mean, foot_std_dev= get_mean_std_dev(measured_angles)
+        
+        #Get regressor rows
+        foot_angle_evaluated = model.evaluate_pandas(trial_df)
+        
+        #Optimal fit
+        optimal_estimate = foot_angle_evaluated @ optimal_fit
+        optimal_mean, optimal_std_dev = get_mean_std_dev(optimal_estimate)
+        optimal_rmse = get_rmse(optimal_estimate,measured_angles)
+        
+        #Intersubject fit
+        inter_subject_estimate = foot_angle_evaluated @ inter_subject_average_fit
+        inter_subject_mean,  inter_subject_std_dev = get_mean_std_dev(inter_subject_estimate)
+        inter_subject_rmse = get_rmse(inter_subject_estimate,measured_angles)
+    
+        #Gait fingerprint fit
+        gait_fingerprint_estimate = foot_angle_evaluated @ (inter_subject_average_fit + personalization_map_scaled @ gait_fingerprints)
+        gait_fingerprint_mean, gait_fingerprint_std_dev = get_mean_std_dev(gait_fingerprint_estimate)
+        gait_fingerprint_rmse = get_rmse(gait_fingerprint_estimate,measured_angles)
 
-    clrs = sns.color_palette("husl", 5)
-    with sns.axes_style("darkgrid"):
-        
-        #Level ground
-        ax[0].plot(x, lg_foot_mean,label='Measured Foot Angle', c=clrs[0])
-        ax[0].fill_between(x, lg_foot_mean-lg_foot_std_dev, lg_foot_mean+lg_foot_std_dev ,alpha=0.3, facecolor=clrs[0])
-        
-        ax[0].plot(x, lg_optimal_mean,label='Optimal Fit RMSE:{:.2f}'.format(lg_optimal_rmse), c=clrs[1])
-        ax[0].fill_between(x, lg_optimal_mean-lg_optimal_std_dev, lg_optimal_mean+lg_optimal_std_dev ,alpha=0.3, facecolor=clrs[1])
-        
-        ax[0].plot(x, lg_inter_subject_mean,label='Inter-Subject Averate Fit RMSE:{:.2f}'.format(lg_inter_subject_rmse), c=clrs[2])
-        ax[0].fill_between(x, lg_inter_subject_mean-lg_inter_subject_std_dev, lg_inter_subject_mean+lg_inter_subject_std_dev ,alpha=0.3, facecolor=clrs[2])
+        #Bad gait fingerprint fit
+        bad_gait_fingerprint_estimate = foot_angle_evaluated @ (inter_subject_average_fit + bad_personalization_map_scaled @ bad_gait_fingerprints)
+        bad_gait_fingerprint_mean, bad_gait_fingerprint_std_dev = get_mean_std_dev(bad_gait_fingerprint_estimate)
+        bad_gait_fingerprint_rmse = get_rmse(bad_gait_fingerprint_estimate,measured_angles)
 
-        ax[0].plot(x, lg_gait_fingerprint_mean,label='Gait Fingerprint Fit RMSE:{:.2f}'.format(lg_gait_fingerprint_rmse), c=clrs[3])
-        ax[0].fill_between(x, lg_gait_fingerprint_mean-lg_gait_fingerprint_std_dev, lg_gait_fingerprint_mean+lg_gait_fingerprint_std_dev ,alpha=0.3, facecolor=clrs[3])
-        
-        ax[0].title.set_text("Walking at 1m/s with 0-deg incline")
-        ax[0].legend()
-        
-        #Incline
-        ax[1].plot(x, i_foot_mean,label='measured foot angle', c=clrs[1])
-        ax[1].fill_between(x, i_foot_mean-i_foot_std_dev, i_foot_mean + i_foot_std_dev ,alpha=0.3, facecolor=clrs[1])
-        ax[1].plot(x, i_optimal_mean,label='measured foot angle', c=clrs[1])
-        ax[1].fill_between(x, i_optimal_mean-i_optimal_std_dev, i_optimal_mean + i_optimal_std_dev ,alpha=0.3, facecolor=clrs[1])
-        ax[1].title.set_text("Walking at 0.8m/s with 10-deg incline")
-
-        #Fast walking
-        ax[2].plot(x, fw_foot_mean,label='measured foot angle', c=clrs[1])
-        ax[2].fill_between(x, fw_foot_mean-fw_foot_std_dev, fw_foot_mean+fw_foot_std_dev ,alpha=0.3, facecolor=clrs[1])
-        ax[2].title.set_text("Walking at 1.2m/s with 5-deg incline")
-
+        clrs = sns.color_palette("bright", 5)
+        with sns.axes_style("darkgrid"):
+            
+            #Measured
+            ax[i].plot(x, foot_mean,label='Measured Foot Angle', c=clrs[0])
+            ax[i].fill_between(x, foot_mean-foot_std_dev, foot_mean+foot_std_dev ,alpha=0.3, facecolor=clrs[0])
+            #Optimal
+            ax[i].plot(x, optimal_mean,label='Optimal Fit RMSE:{:.2f}'.format(optimal_rmse), c=clrs[1])
+            ax[i].fill_between(x, optimal_mean-optimal_std_dev, optimal_mean+optimal_std_dev ,alpha=0.3, facecolor=clrs[1])
+            #Inter subject average
+            ax[i].plot(x, inter_subject_mean,label='Inter-Subject Averate Fit RMSE:{:.2f}'.format(inter_subject_rmse), c=clrs[2])
+            ax[i].fill_between(x, inter_subject_mean-inter_subject_std_dev, inter_subject_mean+inter_subject_std_dev ,alpha=0.3, facecolor=clrs[2])
+            #Gait fingerprint
+            ax[i].plot(x, gait_fingerprint_mean,label='Gait Fingerprint Fit RMSE:{:.2f}'.format(gait_fingerprint_rmse), c=clrs[3])
+            ax[i].fill_between(x, gait_fingerprint_mean-gait_fingerprint_std_dev, gait_fingerprint_mean+gait_fingerprint_std_dev ,alpha=0.3, facecolor=clrs[3])
+            #Bad Gait fingerprint
+            ax[i].plot(x, bad_gait_fingerprint_mean,label='Bad Gait Fingerprint Fit RMSE:{:.2f}'.format(bad_gait_fingerprint_rmse), c=clrs[4])
+            ax[i].fill_between(x, bad_gait_fingerprint_mean-bad_gait_fingerprint_std_dev, bad_gait_fingerprint_mean+bad_gait_fingerprint_std_dev ,alpha=0.3, facecolor=clrs[4])
+            
+            ax[i].title.set_text(trial_to_string(trial,joint_str))
+            ax[i].legend()
+            
 
     
 #%%
