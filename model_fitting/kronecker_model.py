@@ -12,6 +12,7 @@ import pickle
 from sklearn.decomposition import PCA
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 #Model Object:
 # list of basis objects
@@ -104,8 +105,15 @@ class Kronecker_Model:
         return pandas_kronecker(dataframe,self.funcs)#,partial_derivatives)
     
     
-    def evaluate_subject_optimal(self,subject, dataframe):
+    def evaluate_subject_optimal_pandas(self,subject, dataframe):
         regressor = self.evaluate_pandas(dataframe)
+        print(regressor.shape)
+        xi = self.subjects[subject]['optimal_xi']
+        print(regressor.shape)
+        return regressor @ xi
+    
+    def evaluate_subject_optimal_numpy(self,subject, np_array):
+        regressor = self.evaluate_numpy(np_array)
         print(regressor.shape)
         xi = self.subjects[subject]['optimal_xi']
         print(regressor.shape)
@@ -153,7 +161,7 @@ class Kronecker_Model:
     
         if self.time_derivative == True:
             #print("Phase dot: " + str(phase_states[1]))
-            output = phase_states[1]*output
+            output = phase_states[1,:]*output
 
         return output
 
@@ -174,7 +182,7 @@ class Kronecker_Model:
 
         if(partial_derivatives is None):
             partial_derivatives = self.no_derivatives
-
+        #Todo: this is sub-optimal
         else:
             derive = False
             for name in self.gait_fingerprint_names:
@@ -223,24 +231,24 @@ class Kronecker_Model:
             RTy += R.T @ y
             yTy += y.T @ y
         
-        print("Is it invertible? {}".format(np.linalg.matrix_rank(np.linalg.inv(RTR))))
-        try:
+        # try:
 
-            assert (np.linalg.norm(RTR-RTR.T) < 1e-7)
+        #     assert (np.linalg.norm(RTR-RTR.T) < 1e-7)
             
-            eval_, evec_ = np.linalg.eigh(RTR)
-            for e in eval_:
-                #print("Eigenvalue is {}".format(e))
-                assert(e >= 1e-2)
+        #     eval_, evec_ = np.linalg.eigh(RTR)
+        #     for e in eval_:
+        #         #print("Eigenvalue is {}".format(e))
+        #         assert(e >= 1e-2)
             
         
-        except AssertionError:
-            print("Assertion Error on RTR \n {}".format(RTR))
-            print("R = {}".format(R))
+        # except AssertionError:
+        #     print("Assertion Error on RTR \n {}".format(RTR))
+        #     print("R = {}".format(R))
 
-            raise AssertionError
+        #     raise AssertionError
         
         return np.linalg.solve(RTR, RTy), num_rows, RTR, RTy, yTR, yTy
+       
 
 
     def fit_subjects(self):
@@ -321,6 +329,7 @@ class Kronecker_Model:
 
         #Eigenvalues are obtained from smalles to bigger, make it bigger to smaller
         ψs = np.flip(ψinverted)
+        self.scaled_pca_eigenvalues = ψs
         Ψ = np.diagflat(ψs)
 
         #If we change the eigenvalues we also need to change the eigenvectors
@@ -389,8 +398,8 @@ class Kronecker_Model:
                     
             subject_dict = self.one_left_out_subjects[subject]        
             print("One left out fit: " + subject)
-            #print(subject_dict['filename'])
             data = subject_dict['dataframe']
+            
             output = self.least_squares(data,self.output_name)
             subject_dict['optimal_xi'] = output[0]
             subject_dict['num_rows'] = output[1]
@@ -551,21 +560,17 @@ def plot_model():
 
     model_foot = model_loader('foot_model.pickle')
     model_shank = model_loader('shank_model.pickle')
-    model_foot_dot = model_loader('foot_dot_model.pickle')
-    model_shank_dot = model_loader('shank_dot_model.pickle')
-    
-    #Calculate the derivative of foot dot manually
-    #foot_anles_cutoff = trial_df['jointangles_foot_x'].values[:-1]    
-    #foot_angles_future = trial_df['jointangles_foot_x'].values[1:]
-    #phase_rate = trial_df['phase_dot'].values[:]
-    #foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate/150)
     
     #Variables
     ##########################################################################
-    subject = 'AB10'
+    subject = 'AB01'
     model = model_foot
     joint_angle = 'jointangles_foot_x'
     joint_str = joint_angle.split('_')[1].capitalize()
+    #trials = ['s0x8i0','s0x8i10','s1x2i0']
+    trials = ['s0x8i0']
+    #trials = list(df.trial.unique())[:]
+    mean_plots = False
     ##########################################################################
     
     try:
@@ -573,6 +578,7 @@ def plot_model():
     except KeyError:
         print("Not in subject dict, checking left out dict")
         subject_dict = model.one_left_out_subjects[subject]
+        print("In left out dict")
 
     
     #Get constants
@@ -585,9 +591,7 @@ def plot_model():
     
     df = pd.read_parquet(subject_dict['filename'])
     
-    #trials = ['s1i0','s0x8i10','s1x2i5','s1x2d10','s0x8d7x5']
-    #trials = ['s1x2i7x5']
-    trials = list(df.trial.unique())[:8]
+    
     
     points_per_step = 150
     x = np.linspace(0,1+1/points_per_step,points_per_step)
@@ -601,37 +605,55 @@ def plot_model():
         #Level ground walking
         #Get measured data
         trial_df = df[df['trial'] == trial]
+        
+        #Uncomment to get rmse for all trials
+        #trial_df = df
         measured_angles = trial_df[joint_angle]
         foot_mean, foot_std_dev= get_mean_std_dev(measured_angles)
         
         #Get regressor rows
-        foot_angle_evaluated = model.evaluate_pandas(trial_df)
+        if(mean_plots == True):
+            foot_angle_evaluated = model.evaluate_pandas(trial_df)
+        else:
+            measured_angles_total = measured_angles
+            measured_angles = measured_angles[:150]
+            foot_angle_evaluated = model.evaluate_pandas(trial_df)[:150]
         
+        
+        print(trial)
         #Optimal fit
         optimal_estimate = foot_angle_evaluated @ optimal_fit
         optimal_mean, optimal_std_dev = get_mean_std_dev(optimal_estimate)
         optimal_rmse = get_rmse(optimal_estimate,measured_angles)
-        
+        print("Optimal rmse {}".format(optimal_rmse))
+
         #Intersubject fit
         inter_subject_estimate = foot_angle_evaluated @ inter_subject_average_fit
         inter_subject_mean,  inter_subject_std_dev = get_mean_std_dev(inter_subject_estimate)
         inter_subject_rmse = get_rmse(inter_subject_estimate,measured_angles)
-    
+        print("Inter subject average rmse {}".format(inter_subject_rmse))
+
+        
         #Gait fingerprint fit
         gait_fingerprint_estimate = foot_angle_evaluated @ (inter_subject_average_fit + personalization_map_scaled @ gait_fingerprints)
         gait_fingerprint_mean, gait_fingerprint_std_dev = get_mean_std_dev(gait_fingerprint_estimate)
         gait_fingerprint_rmse = get_rmse(gait_fingerprint_estimate,measured_angles)
+        print("Gait fingerprint rmse {}".format(gait_fingerprint_rmse))
 
+        
         #Bad gait fingerprint fit
         bad_gait_fingerprint_estimate = foot_angle_evaluated @ (inter_subject_average_fit + bad_personalization_map_scaled @ bad_gait_fingerprints)
         bad_gait_fingerprint_mean, bad_gait_fingerprint_std_dev = get_mean_std_dev(bad_gait_fingerprint_estimate)
         bad_gait_fingerprint_rmse = get_rmse(bad_gait_fingerprint_estimate,measured_angles)
-
-        clrs = sns.color_palette("bright", 5)
-        with sns.axes_style("darkgrid"):
+        print("Bad gait fingerprint rmse {}".format(bad_gait_fingerprint_rmse))
+        
+        
+        clrs = cm.get_cmap('tab20').colors
             
+        if(mean_plots == True):
             #Measured
-            ax[i].plot(x, foot_mean,label='Measured Foot Angle', c=clrs[0])
+            #Mean plots with width 
+            ax[i].plot(x, foot_mean,label='Measured Foot Angle', c=clrs[0], linestyle = 'solid')
             ax[i].fill_between(x, foot_mean-foot_std_dev, foot_mean+foot_std_dev ,alpha=0.3, facecolor=clrs[0])
             #Optimal
             ax[i].plot(x, optimal_mean,label='Optimal Fit RMSE:{:.2f}'.format(optimal_rmse), c=clrs[1])
@@ -645,11 +667,97 @@ def plot_model():
             #Bad Gait fingerprint
             ax[i].plot(x, bad_gait_fingerprint_mean,label='Bad Gait Fingerprint Fit RMSE:{:.2f}'.format(bad_gait_fingerprint_rmse), c=clrs[4])
             ax[i].fill_between(x, bad_gait_fingerprint_mean-bad_gait_fingerprint_std_dev, bad_gait_fingerprint_mean+bad_gait_fingerprint_std_dev ,alpha=0.3, facecolor=clrs[4])
+        
+        else:
             
+            line_width = 6
+            # Individual line plots
+            step_data = measured_angles_total.values.reshape(-1,150)
+            for k in range (0,1):#step_data.shape[0],3):
+                if (150 - np.count_nonzero(step_data[k,:]) > 20):
+                    continue
+                if k == 0:
+                    ax[i].plot(x, step_data[k,:],label='Measured Foot Angle', linestyle = 'solid', alpha=0.2, linewidth=5, c='darkgrey')
+                else:
+                    ax[i].plot(x, step_data[k,:], linestyle = 'solid', alpha=0.3, linewidth=5, c='darkgrey')
+            
+            #Inter subject average
+            ax[i].plot(x, inter_subject_estimate,label='Inter-Subject Averate Fit RMSE:{:.2f}'.format(inter_subject_rmse),
+                       linewidth=line_width, c=clrs[6])#, linestyle=(0, (1, 1)), alpha=0.8) #Densely dotted
+           
+            #Bad Gait fingerprint
+            # ax[i].plot(x, bad_gait_fingerprint_estimate,label='Bad Gait Fingerprint Fit RMSE:{:.2f}'.format(bad_gait_fingerprint_rmse),
+            #            linewidth=line_width,c=clrs[4],linestyle=(0,(6,1,1,1)), alpha=0.8)
+            
+            #Optimal fit
+            ax[i].plot(x, optimal_estimate,label='Optimal Fit RMSE:{:.2f}'.format(optimal_rmse),
+                       linewidth=line_width, c=clrs[2])#, linestyle=(0, (6, 1)), alpha=0.8) #Densely dash dot dotted
+            
+            #Gait fingerprint
+            ax[i].plot(x, gait_fingerprint_estimate,label='Gait Fingerprint Fit RMSE:{:.2f}'.format(gait_fingerprint_rmse),
+                       linewidth=line_width, c=clrs[0], linestyle='solid', alpha=0.8) 
+            
+            ax[i].spines["top"].set_visible(False)
+            ax[i].spines["right"].set_visible(False)
             ax[i].title.set_text(trial_to_string(trial,joint_str))
             ax[i].legend()
             
+#%%
+def plot_cumulative_variance():
+    pass
+#%%
+    model_foot = model_loader('foot_model.pickle')
+    model_shank = model_loader('shank_model.pickle')
+    model_foot_dot = model_loader('foot_dot_model.pickle')
+    model_shank_dot = model_loader('shank_dot_model.pickle')
+    
+    
+    clrs = cm.get_cmap('tab20').colors
 
+    model = model_foot
+    
+    pca_values = model.scaled_pca_eigenvalues
+    
+    pca_values_sum= np.sum(pca_values)
+    marker_on = [5]
+    pca_cum_sum = np.cumsum(pca_values)/pca_values_sum
+    
+    plt.plot(pca_cum_sum[:11], '-o', markevery=marker_on, linewidth=7, markersize=15, mfc = 'r', mec='r',c=clrs[0])
+    plt.xticks(np.arange(0, 11, 1.0))
+    plt.show()
+    
+#%%
+def validate_velocity_derivative():
+    pass
+#%% 
+    
+    trial = 's0x8i0'
+    subject = 'AB01'
+    joint = 'jointangles_foot_x'
+    filename = '../local-storage/test/dataport_flattened_partial_{}.parquet'.format(subject)
+    
+    df = pd.read_parquet(filename)
+    trial_df = df[df['trial'] == trial]
+    
+    model_foot_dot = model_loader('foot_dot_model.pickle')
+    model_shank_dot = model_loader('shank_dot_model.pickle')
+    
+    #Calculate the derivative of foot dot manually
+    foot_anles_cutoff = trial_df[joint].values[:-1]    
+    foot_angles_future = trial_df[joint].values[1:]
+    phase_rate = trial_df['phase_dot'].values[1:]
+    measured_foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate)#*150)
+    
+    #Get the calculated derivative
+    states = trial_df[['phase','phase_dot','ramp','step_length']].values
+    calculated_foot_derivative = model_foot_dot.evaluate_subject_optimal_numpy(subject, states)
+    
+    
+    points_per_step = 150
+    x = np.linspace(0,1+1/points_per_step,points_per_step)
+    
+    plt.plot(x,measured_foot_derivative[:150])
+    plt.plot(x,calculated_foot_derivative[:150])
     
 #%%
 if __name__=='__main__':
