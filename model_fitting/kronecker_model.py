@@ -13,7 +13,7 @@ from sklearn.decomposition import PCA
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import cm
-
+from function_bases import ekf
 #Model Object:
 # list of basis objects
 # string description
@@ -140,6 +140,7 @@ class Kronecker_Model:
         return row_function @ xi
 
     def evaluate_numpy(self,states,partial_derivatives=None):
+        rows = states.shape[1]
         #Copy the dict so that we dont modify the global one
         if(partial_derivatives == None):
             local_partial_derivatives = dict(self.no_derivatives)
@@ -156,12 +157,15 @@ class Kronecker_Model:
         output = np.array(1).reshape(1,1,1)
 
         for func,state in zip(self.funcs,phase_states):
-            output = (output[:,np.newaxis,:]*func.evaluate_derivative(state[:,np.newaxis],local_partial_derivatives[func.var_name])[:,:,np.newaxis]).reshape(1,-1)
+            state_t = (state.T)[:,np.newaxis]
+            print("Ekf value {}, phase shape {}".format(ekf, state.shape))
+            eval_value = func.evaluate_derivative(state_t,local_partial_derivatives[func.var_name])[:,:,np.newaxis]
+            output = (output[:,np.newaxis,:]*eval_value).reshape(rows,-1)
             #print("I'm alive, size = " + str(output.shape))
     
         if self.time_derivative == True:
             #print("Phase dot: " + str(phase_states[1]))
-            output = phase_states[1,:]*output
+            output = phase_states[1,:].reshape(-1,1)*output
 
         return output
 
@@ -749,7 +753,7 @@ def validate_velocity_derivative():
     measured_foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate)#*150)
     
     #Get the calculated derivative
-    states = trial_df[['phase','phase_dot','ramp','step_length']].values
+    states = trial_df[['phase','phase_dot','ramp','step_length']].values.T
     calculated_foot_derivative = model_foot_dot.evaluate_subject_optimal_numpy(subject, states)
     
     
@@ -763,3 +767,4 @@ def validate_velocity_derivative():
 if __name__=='__main__':
     pass
     #train_models()
+    validate_velocity_derivative()

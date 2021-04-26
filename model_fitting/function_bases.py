@@ -5,8 +5,6 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 
 
 """
-ekf = False
-
 #H is the partial derivative of the model with respect to the state variables and the pca axis coefficient variables 
 #The partial derivative with respect to the state variable is the derivative of the function row for the row function vector for that particular state variable kroneckerd with he other normal funcitons
 #The partial derivative with respect to he pca axis is just the pca axis times the kronecker productl
@@ -62,10 +60,7 @@ class Polynomial_Basis(Basis):
         #evaluate the power of each element
         x_array = np.repeat(x,self.n,axis=1)
         power_array = np.arange(self.n)
-        if ekf:
-            output = np.power(x_array,power_array).reshape(1,-1)
-        else:
-            output = np.power(x_array,power_array)
+        output = np.power(x_array,power_array)
         return output
 
     #This function will evaluate the derivative of the model at the given 
@@ -93,15 +88,9 @@ class Polynomial_Basis(Basis):
             #Set negative indices to zero
             power_array = np.where(power_array<0,0,power_array)
             
-            if ekf:
-                return (np.power(x_array,power_array)*coefficient_array).reshape(1,-1)
-            else:
-                return (np.power(x_array,power_array)*coefficient_array)
+            return (np.power(x_array,power_array)*coefficient_array)
         else:
-            if ekf:
-                return np.repeat(0,self.size).reshape(1,-1)
-            else:
-                return np.repeat(0,self.size)
+            return np.repeat(0,self.size)
 
          
 
@@ -127,10 +116,7 @@ class Fourier_Basis(Basis):
         #Add the sine and cos part
         result[:,1:self.n+1] = np.cos(2*np.pi*x @ l)
         result[:,self.n+1:] =  np.sin(2*np.pi*x @ l)
-        if(ekf):
-            return result.reshape(1,-1)
-        else:
-            return result
+        return result
 
 
     #This function will evaluate the derivative of the model at the given 
@@ -151,10 +137,7 @@ class Fourier_Basis(Basis):
         #https://www.wolframalpha.com/input/?i=d%5En+sin%282*pi*a*x%29%2Fdx%5En
         result[:,self.n+1:] =  np.power((2*np.pi*l),num_derivatives)*np.sin(0.5*np.pi*(num_derivatives + 4*x @ l))
         
-        if(ekf):
-            return result.reshape(1,-1)
-        else:
-            return result
+        return result
 
 
 
