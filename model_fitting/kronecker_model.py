@@ -13,7 +13,6 @@ from sklearn.decomposition import PCA
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from function_bases import ekf
 #Model Object:
 # list of basis objects
 # string description
@@ -158,7 +157,6 @@ class Kronecker_Model:
 
         for func,state in zip(self.funcs,phase_states):
             state_t = (state.T)[:,np.newaxis]
-            print("Ekf value {}, phase shape {}".format(ekf, state.shape))
             eval_value = func.evaluate_derivative(state_t,local_partial_derivatives[func.var_name])[:,:,np.newaxis]
             output = (output[:,np.newaxis,:]*eval_value).reshape(rows,-1)
             #print("I'm alive, size = " + str(output.shape))
