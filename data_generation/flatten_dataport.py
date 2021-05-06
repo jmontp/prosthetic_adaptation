@@ -159,10 +159,26 @@ def add_global_shank_angle():
         df['jointangles_shank_x'] = df['jointangles_foot_x'] +  df['jointangles_ankle_x']
         df['jointangles_shank_y'] = df['jointangles_foot_y'] +  df['jointangles_ankle_y']
         df['jointangles_shank_z'] = df['jointangles_foot_z'] +  df['jointangles_ankle_z']
+        
+        #Calculate the derivative of foot dot manually
+        shank_anles_cutoff = df['jointangles_shank_x'].values[:-1]    
+        shank_angles_future = df['jointangles_shank_x'].values[1:]
+        phase_rate = df['phase_dot'].values[:-1]
+        measured_shank_derivative = (shank_angles_future-shank_anles_cutoff)*(phase_rate)*150
+        measured_shank_derivative = np.append(measured_shank_derivative,0)
+        df['jointangles_shank_dot_x'] = measured_shank_derivative
+        
+        #Calculate the derivative of foot dot manually
+        foot_anles_cutoff = df['jointangles_foot_x'].values[:-1]    
+        foot_angles_future = df['jointangles_foot_x'].values[1:]
+        measured_foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate)*150
+        measured_foot_derivative = np.append(measured_foot_derivative,0)
+        df['jointangles_foot_dot_x'] = measured_foot_derivative
         df.to_parquet(subject[1])
 
 
 #%%            
 if __name__ == '__main__':
-    quick_flatten_dataport()
-    add_global_shank_angle()
+    #quick_flatten_dataport()
+    #add_global_shank_angle()
+    pass

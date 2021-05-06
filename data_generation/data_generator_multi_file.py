@@ -486,7 +486,7 @@ def find_bad_endpoints_for_emma(d,out_list,parent_key='', sep='/'):
 def find_bad_endpoints_main():
     pass
     #%%
-    file_name = './local-storage/Normalized.mat'
+    file_name = '../local-storage/Emma_dataset/latest/Normalized.mat'
     data = h5py.File(file_name, 'r')['Normalized']
     
     # out = flatten_list(data)
@@ -501,8 +501,10 @@ def find_bad_endpoints_main():
     bad_runs = set()
     for element, dataset in output_list: 
         bad_runs.add("/".join(element.split('/')[:4]))
+        
+    print(bad_runs)
 
-
+#%%
 def get_endpoints_AY():
     pass
     #%%
