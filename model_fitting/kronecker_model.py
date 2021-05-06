@@ -113,9 +113,7 @@ class Kronecker_Model:
     
     def evaluate_subject_optimal_numpy(self,subject, np_array):
         regressor = self.evaluate_numpy(np_array)
-        print(regressor.shape)
         xi = self.subjects[subject]['optimal_xi']
-        print(regressor.shape)
         return regressor @ xi
     
     def evaluate_gaint_fingerprint(self,dataframe,partial_derivatives=None):
@@ -148,8 +146,12 @@ class Kronecker_Model:
         
         #Make sure we only have the amount of states that we want
         phase_states = states[:self.num_gait_fingerprint,:]
-
+        
+        partial_phase_dot = False
         if self.time_derivative == True:
+            if (local_partial_derivatives['phase_dot'] > 0):
+                partial_phase_dot = True
+
             local_partial_derivatives['phase']+=1
             #print(local_partial_derivatives)
 
@@ -157,14 +159,28 @@ class Kronecker_Model:
 
         for func,state in zip(self.funcs,phase_states):
             state_t = (state.T)[:,np.newaxis]
-            eval_value = func.evaluate_derivative(state_t,local_partial_derivatives[func.var_name])[:,:,np.newaxis]
+            eval_value = func.evaluate_derivative(state_t,local_partial_derivatives[func.var_name]).reshape(rows,-1,1)
             output = (output[:,np.newaxis,:]*eval_value).reshape(rows,-1)
             #print("I'm alive, size = " + str(output.shape))
     
         if self.time_derivative == True:
             #print("Phase dot: " + str(phase_states[1]))
+            #print(phase_states[1,:].reshape(-1,1))
             output = phase_states[1,:].reshape(-1,1)*output
-
+            
+            if(partial_phase_dot == True):
+                local_partial_derivatives['phase_dot'] -= 1
+                
+                assert local_partial_derivatives['phase_dot'] >= 0
+                assert local_partial_derivatives['phase'] > 0
+                
+                added_output = np.array(1).reshape(1,1,1)
+                for func,state in zip(self.funcs,phase_states):
+                    state_t = (state.T)[:,np.newaxis]
+                    eval_value = func.evaluate_derivative(state_t,local_partial_derivatives[func.var_name]).reshape(rows,-1,1)
+                    added_output = (added_output[:,np.newaxis,:]*eval_value).reshape(rows,-1)
+                output += added_output
+                
         return output
 
     def get_partial_derivatives(self,state_names):
@@ -181,14 +197,16 @@ class Kronecker_Model:
         
         phase_states =  states[:self.num_states].copy()
         gait_fingerprints = states[self.num_states:].copy()
+        
+        derive = False
+
 
         if(partial_derivatives is None):
-            partial_derivatives = self.no_derivatives
-        #Todo: this is sub-optimal
+            local_partial_derivatives = self.no_derivatives
         else:
-            derive = False
+            local_partial_derivatives = partial_derivatives.copy()
             for name in self.gait_fingerprint_names:
-                if partial_derivatives[name] > 0:
+                if local_partial_derivatives[name] > 0:
                     if(derive==True):
                         gait_fingerprints[int(name[-1])-1] = 0
                         break
@@ -200,8 +218,11 @@ class Kronecker_Model:
 
         #print(self.inter_subject_average_fit.shape)
         #print((self.personalization_map @ gait_fingerprints).shape)
-        xi = (self.personalization_map @ gait_fingerprints) + self.inter_subject_average_fit
-
+        if(derive == False):
+            xi = (self.personalization_map @ gait_fingerprints) + self.inter_subject_average_fit
+        else:
+            xi = (self.personalization_map @ gait_fingerprints)
+            
         row_vector = self.evaluate_numpy(phase_states,partial_derivatives)
 
         return row_vector @ xi
@@ -488,10 +509,10 @@ def train_models():
     train_models = True
     if train_models == True:
         #Determine the phase models
-        phase_model = Fourier_Basis(10,'phase')
+        phase_model = Fourier_Basis(8,'phase')
         phase_dot_model = Polynomial_Basis(1,'phase_dot')
-        step_length_model = Polynomial_Basis(3,'step_length')
-        ramp_model = Polynomial_Basis(4,'ramp')
+        step_length_model = Polynomial_Basis(2,'step_length')
+        ramp_model = Polynomial_Basis(3,'ramp')
     
         # #Get the subjects
         left_out = [('AB10','../local-storage/test/dataport_flattened_partial_AB10.parquet')]
@@ -675,7 +696,7 @@ def plot_model():
             line_width = 6
             # Individual line plots
             step_data = measured_angles_total.values.reshape(-1,150)
-            for k in range (0,1):#step_data.shape[0],3):
+            for k in range (0,step_data.shape[0],3):
                 if (150 - np.count_nonzero(step_data[k,:]) > 20):
                     continue
                 if k == 0:
@@ -733,36 +754,55 @@ def validate_velocity_derivative():
     pass
 #%% 
     
-    trial = 's0x8i0'
+    trial = 's1x2i7x5'
     subject = 'AB01'
-    joint = 'jointangles_foot_x'
+    joint = 'jointangles_shank_x'
     filename = '../local-storage/test/dataport_flattened_partial_{}.parquet'.format(subject)
     
     df = pd.read_parquet(filename)
     trial_df = df[df['trial'] == trial]
     
     model_foot_dot = model_loader('foot_dot_model.pickle')
-    model_shank_dot = model_loader('shank_dot_model.pickle')
+    model_foot = model_loader('foot_model.pickle')    
+    
+    states = ['phase', 'phase_dot', 'step_length', 'ramp']
+    states_data = trial_df[states].values.T
+    
+    
+    foot_angle_evaluated = model_foot.evaluate_numpy(states_data)
+    foot_angle_dot_evaluated = model_foot_dot.evaluate_numpy(states_data)
+
     
     #Calculate the derivative of foot dot manually
     foot_anles_cutoff = trial_df[joint].values[:-1]    
     foot_angles_future = trial_df[joint].values[1:]
-    phase_rate = trial_df['phase_dot'].values[1:]
-    measured_foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate)#*150)
+    phase_rate = trial_df['phase_dot'].values[:-1]
     
-    #Get the calculated derivative
-    states = trial_df[['phase','phase_dot','ramp','step_length']].values.T
-    calculated_foot_derivative = model_foot_dot.evaluate_subject_optimal_numpy(subject, states)
+    measured_foot_derivative = (foot_angles_future-foot_anles_cutoff)*(phase_rate)*150
+    calculated_foot_derivative = foot_angle_dot_evaluated @ model_foot_dot.subjects[subject]['optimal_xi']
     
+    measured_foot_angle = trial_df[joint]
+    calculated_foot_angles = foot_angle_evaluated @ model_foot.subjects[subject]['optimal_xi']
     
     points_per_step = 150
-    x = np.linspace(0,1+1/points_per_step,points_per_step)
+    start_step = 40
+    num_steps = 3 + start_step
+    x = np.linspace(0,1+1/(num_steps-start_step)*points_per_step,(num_steps-start_step)*points_per_step)
+    fig, axs = plt.subplots(2,1)
+    axs[0].plot(x,measured_foot_derivative[start_step*points_per_step:num_steps*points_per_step])
+    axs[0].plot(x,calculated_foot_derivative[start_step*points_per_step:num_steps*points_per_step])
+    axs[0].legend(['measured','calculated'])
+    axs[0].grid(True)
+
     
-    plt.plot(x,measured_foot_derivative[:150])
-    plt.plot(x,calculated_foot_derivative[:150])
+    axs[1].plot(x, measured_foot_angle[start_step*points_per_step:num_steps*points_per_step])
+    axs[1].plot(x, calculated_foot_angles[start_step*points_per_step:num_steps*points_per_step])
+    axs[1].legend([ 'measured foot angle', 'calculated foot angle'])
+    axs[1].grid(True)
+    plt.show()
     
 #%%
 if __name__=='__main__':
     pass
     #train_models()
-    validate_velocity_derivative()
+    #validate_velocity_derivative()
