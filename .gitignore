@@ -5,3 +5,7 @@ __pycache__/
 __pycache__/*
 utils/__pycache__/*
 utils/__pycache__/
+*.pickle
+model_fitting/*.pickle
+*.svg
+*.png
