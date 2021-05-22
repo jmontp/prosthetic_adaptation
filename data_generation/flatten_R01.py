@@ -164,7 +164,7 @@ def get_end_points_R01(d,out_dict,parent_key='', sep='/',num_last_keys=2):
 def test_flatten_R01(): 
     pass
     #%%
-    file_name = '../local-storage/Normalized.mat'
+    file_name = '../local-storage/Emma_dataset/latest/Normalized.mat'
     data = h5py.File(file_name, 'r')['Normalized']['AB01']
     
     # out = flatten_list(data)
@@ -192,6 +192,30 @@ def test_flatten_R01():
                 print(column_name + " " + str(len(endpoint_list[1])) + " (ignored)")
             else:
                 print(column_name + " " + str(len(endpoint_list[1])))
+                
+                #Pick an arbitraty columns to get information about all the rows
+                if(column_name == 'jointangles_ankle_x'):
+                    #Yikes...
+                    #The first list comprehension gives you a double list 
+                    #with every trial, the second comprehension flattens out the list
+                    trials = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[0]]*dataset.shape[0]*dataset.shape[1] ]
+                    legs = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[-3]]*dataset.shape[0]*dataset.shape[1] ]
+                    #Yikes and then some
+                   
+                    phase_dot_list = []
+                    step_length_list = []
+                    for experiment_name in endpoint_list[0]:
+                            endpoint_split = experiment_name.split('/')    
+                            trial = endpoint_split[0]
+                            leg = endpoint_split[-3]
+                            
+                            time = data[trial]['cycles'][leg]['time']
+                            speed = get_speed(trial)
+                            time_delta = (time[:,-1]-time[:,0])
+                            phase_dot_list.append(np.repeat(1/time_delta, 150))
+                            step_length_list.append(np.repeat(speed*time_delta, 150))
+                
+                
                 arr = np.concatenate(endpoint_list[1],axis=0).flatten()
                 len_arr = arr.shape[0]
                 

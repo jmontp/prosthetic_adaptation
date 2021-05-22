@@ -47,11 +47,56 @@ def quick_flatten_dataport():
     #%%
     file_name = '../local-storage/InclineExperiment.mat'
     h5py_file = h5py.File(file_name)['Gaitcycle']
+    
+    ### Iterate through all the subjects, make a file per subject to keep it RAM bound
     for subject in h5py_file.keys():
        
+        #Initialize variables for the subject
         data = h5py_file[subject]
         save_name = '../local-storage/test/dataport_flattened_partial_{}.parquet'.format(subject)
+        #Store all the end points
+        columns_to_endpoint_list = {}
+        get_end_points(data,columns_to_endpoint_list)
+        #This dictionary stores dataframes based on the amount of steps that
+        #they have        
+        steps_to_dataframes_dict = {}
+        #Which column will be used to get information about each row
+        selected_column = 'jointangles_ankle_x'
         
+       
+        ### Main loop - process each potential column
+        for column_name,endpoint_list in columns_to_endpoint_list.items():
+            
+            #If the enpoints contain any of this, ignore the endpoint
+            if('subjectdetails' in column_name or\
+                'cycles' in column_name or\
+                'stepsout' in column_name or\
+                'description' in column_name or\
+                'mean' in column_name or\
+                'std' in column_name):
+                print(column_name + " " + str(len(endpoint_list[1])) + " (ignored)")
+                continue
+            
+            #Else: this is a valid column
+            print(column_name + " " + str(len(endpoint_list[1])))
+            
+            #Get the data to add it to a dataframe
+            data_array = np.concatenate(endpoint_list[1],axis=0).flatten()
+            #Calculate how many steps are in the dataframe
+            len_arr = data_array.shape[0]
+            len_key = len_arr/150.0
+            
+            #Add the key to the dataframe
+            try:
+                steps_to_dataframes_dict[len_key][column_name] = data_array
+            except KeyError:
+                steps_to_dataframes_dict[len_key] = DataFrame()
+                steps_to_dataframes_dict[len_key][column_name] = data_array
+
+            
+        ### All the dataframes have been created, add information about phase and task 
+        
+        #Helper functions to get time, ramp to append task information to dataframe
         @lru_cache(maxsize=5)
         def get_time(trial,leg):
             return data[trial]['cycles'][leg]['time']
@@ -62,87 +107,61 @@ def quick_flatten_dataport():
         def get_speed(trial):
             return data[data[trial]['description'][1][0]][0][0]
         
-        # out = flatten_list(data)
-        # print(len(out))
+        ## Iterate by row to get phase information
         
-        output_dict = {}
-        get_end_points(data,output_dict)
-        #print(output_dict)
+        #Ugly but effective  
+        #The first list comprehension gives you a two-dimensional list with every trial 
+        #the second comprehension flattens out the list into a single-dimensional list 
+        endpoint_list = columns_to_endpoint_list[selected_column]
+        #trials = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[0]]*dataset.shape[0]*dataset.shape[1]]
+        #legs = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[-3]]*dataset.shape[0]*dataset.shape[1]]
+       
+        #Create lists to store all the phase dot and step length information
+        trials = []
+        legs = []
+        phase_dot_list = []
+        step_length_list = []
         
-        data_frame_dict = {}
+        #Iterate by trial to get time, speed
+        for experiment_name, dataset in zip(*endpoint_list):
+                endpoint_split = experiment_name.split('/')    
+                
+                trial = endpoint_split[0]
+                leg = endpoint_split[-3]
+                
+                trials.extend([trial]*dataset.shape[0]*dataset.shape[1])
+                legs.extend([leg]*dataset.shape[0]*dataset.shape[1])
+                
+                time = get_time(trial,leg)
+                speed = get_speed(trial)
+                
+                time_delta = (time[:,-1]-time[:,0])
+                phase_dot_list.append(np.repeat(1/time_delta, 150))
+                step_length_list.append(np.repeat(speed*time_delta, 150))
         
-        first_column = ""
-        for column_name,endpoint_list in output_dict.items():
-            
-            #Pick out the first column
-            if(first_column == ""):
-                first_column = column_name
-            
-            if('subjectdetails' in column_name or\
-                'cycles' in column_name or\
-                'stepsout' in column_name or\
-                'description' in column_name or\
-                'mean' in column_name or\
-                'std' in column_name):
-                print(column_name + " " + str(len(endpoint_list[1])) + " (ignored)")
-            else:
-                print(column_name + " " + str(len(endpoint_list[1])))
+        #Get the corresponding dataframe to the selected column
+        df = None
+        for dataframe in steps_to_dataframes_dict.values():
+            if selected_column in dataframe.columns:
+                df = dataframe
                 
-                #Pick an arbitraty columns to get information about all the rows
-                if(column_name == 'jointangles_ankle_x'):
-                    #Yikes...
-                    #The first list comprehension gives you a double list 
-                    #with every trial, the second comprehension flattens out the list
-                    trials = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[0]]*dataset.shape[0]*dataset.shape[1] ]
-                    legs = [x for experiment_name, dataset in zip(*endpoint_list) for x in [experiment_name.split('/')[-3]]*dataset.shape[0]*dataset.shape[1] ]
-                    #Yikes and then some
-                   
-                    phase_dot_list = []
-                    step_length_list = []
-                    for experiment_name in endpoint_list[0]:
-                            endpoint_split = experiment_name.split('/')    
-                            trial = endpoint_split[0]
-                            leg = endpoint_split[-3]
-                            
-                            time = data[trial]['cycles'][leg]['time']
-                            speed = get_speed(trial)
-                            time_delta = (time[:,-1]-time[:,0])
-                            phase_dot_list.append(np.repeat(1/time_delta, 150))
-                            step_length_list.append(np.repeat(speed*time_delta, 150))
-                            
-                arr = np.concatenate(endpoint_list[1],axis=0).flatten()
-                len_arr = arr.shape[0]
-                
-                len_key = len_arr/150.0
-                if(len_key not in data_frame_dict):
-                    data_frame_dict[len_key] = DataFrame()
-                    
-                data_frame_dict[len_key][column_name] = arr
-        
-        for df in data_frame_dict.values():
-            if "jointangles_ankle_x" in df.columns:
-                
-                print(len(trials))
-                print(df.shape[0])
-                #They way that this is formatted, there is a data pointer and 
-                # the data itself. The first access to "data" gets the pointer
-                # and the second gets the incline
-               
-                df['ramp'] = [ get_ramp(trial) for trial in trials]
-                
-             
-    
-                df['speed'] = [get_speed(trial) for trial in trials]
-                df['trial'] = trials
-                phase = np.linspace(0,(1-1/150),150)
-                df['leg'] = legs
-                df['phase'] = np.tile(phase,int(df.shape[0]/150))
-                df['phase_dot'] = np.concatenate(phase_dot_list, axis = 0)
-                df['step_length'] = np.concatenate(step_length_list,axis=0)
-                df.to_parquet(save_name)
+        print(len(trials))
+        print(df.shape[0])
+       
+        df['ramp'] = [get_ramp(trial) for trial in trials]
+        df['speed'] = [get_speed(trial) for trial in trials]
+        df['trial'] = trials
+        #We don't want phase to reach one because 0=1 in terms of phase
+        phase = np.linspace(0,(1-1/150),150)
+        df['leg'] = legs
+        df['phase'] = np.tile(phase,int(df.shape[0]/150))
+        df['phase_dot'] = np.concatenate(phase_dot_list, axis = 0)
+        df['step_length'] = np.concatenate(step_length_list,axis=0)
+        #Comment out to not save
+        #df.to_parquet(save_name)
         
         #Uncomment break to just get one person
-        #break
+        break
 #%%
 def add_global_shank_angle():
     pass

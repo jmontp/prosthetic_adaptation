@@ -6,7 +6,8 @@ Created on Mon Mar 22 22:55:34 2021
 @author: jmontp
 """
 
-from model_fitting.model_framework import Polynomial_Basis, Fourier_Basis, Kronecker_Model
+from model_fitting.function_bases import Polynomial_Basis, Fourier_Basis
+from model_fitting.kronecker_model import Kronecker_Model
 import pandas as pd
 import numpy as np 
 import h5py
@@ -15,24 +16,28 @@ import matplotlib.pyplot as plt
 
 
 #Initialize the model that we are going to base the regressor on
-phase_model = Fourier_Basis(9,'phase')
-phase_dot_model = Polynomial_Basis(5, 'phase_dot')
-ramp_model = Polynomial_Basis(5, 'ramp')
+phase_model = Fourier_Basis(5,'phase')
+phase_dot_model = Polynomial_Basis(2, 'phase_dot')
+ramp_model = Polynomial_Basis(2, 'ramp')
 #No step length implemented for now
-step_length_model = Polynomial_Basis(5,'step_length')
-model_hip = Kronecker_Model('jointangles_hip_x', phase_dot_model,ramp_model,phase_model,step_length_model)
+step_length_model = Polynomial_Basis(2,'step_length')
 
 
-subjects = [('AB10','./local-storage/test/dataport_flattened_partial_AB10.parquet')]
+subjects = [('AB10','../local-storage/test/dataport_flattened_partial_AB10.parquet')]
 for i in range(1,10):
-	subjects.append(('AB0'+str(i),'local-storage/test/dataport_flattened_partial_AB0'+str(i)+'.parquet'))
+	subjects.append(('AB0'+str(i),'../local-storage/test/dataport_flattened_partial_AB0'+str(i)+'.parquet'))
 
-print("Adding subjects")
-model_hip.add_subject(subjects)
-print("Fitting?")
-model_hip.fit_subjects()
 
-model_hip.calculate_gait_fingerprint()
+model_hip = Kronecker_Model('jointangles_hip_x',phase_dot_model,ramp_model,phase_model,step_length_model,time_derivative=True,subjects=subjects)
+
+
+
+# print("Adding subjects")
+# model_hip.add_subject(subjects)
+# print("Fitting?")
+# model_hip.fit_subjects()
+
+# model_hip.calculate_gait_fingerprint()
 
 #%%
 #Plot cumulative variance
@@ -81,6 +86,7 @@ plt.show()
 # ab02_data[ab02_data['phase'] == 1-1/150] = np.nan
 
 # plt.plot(ab02_data['phase'][:1500], ab02_data['jointangles_hip_x'][:1500])
+
 # plt.xlabel("Phase")
 # plt.ylabel("AB02 Hip Angle (rad)")
 # plt.show()

@@ -13,6 +13,7 @@ from sklearn.decomposition import PCA
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from utils import assert_pd
 #Model Object:
 # list of basis objects
 # string description
@@ -21,7 +22,7 @@ from matplotlib import cm
 # coefficient_list - list of coefficients for each pca_axis
 #--------------------------
 class Kronecker_Model:
-    def __init__(self, output_name,*funcs,time_derivative=False,personalization_map=None,subjects=None,num_gait_fingerprint=5):
+    def __init__(self, output_name,*funcs,time_derivative=False,subjects=None,num_gait_fingerprint=5):
         self.funcs = funcs
 
         #Calculate the size of the parameter array
@@ -53,7 +54,9 @@ class Kronecker_Model:
         print(self.no_derivatives)
         #Todo: Add average pca coefficient
         
-        if(personalization_map == None and subjects is not None):
+        self.combined_model_personalization_map = None
+        
+        if(subjects is not None):
             self.add_subject(subjects)
             self.fit_subjects()
             self.calculate_gait_fingerprint(n=num_gait_fingerprint)
@@ -70,26 +73,6 @@ class Kronecker_Model:
                  'pca_coefficients': [] \
              }
 
-    # #Evaluate the models at the function inputs that are received
-    # #The function inputs are expected in the same order as they where defined
-    # #Alternatively, you can also input a dictionary with the var_name as the key and the 
-    # # value you want to evaluate the function as the value
-    # def evaluate(self, *function_inputs,partial_derivative=None, result_buffer=None):
-        
-    #     result = np.array([1])
-        
-    #     for i in range(self.num_states):
-
-    #         #Verify if we want to take the partial derivative of this function
-    #         if(partial_derivative is not None and curr_func.var_name in partial_derivative):
-    #             apply_derivative = True
-    #         else: 
-    #             apply_derivative = False
-
-
-    #         result=fast_kronecker(result,self.funcs[i].evaluate_conditional(function_inputs[i],False))#, self.alocation_buff[i], False)
-            
-    #     return result.copy()
 
     def evaluate_pandas(self, dataframe, partial_derivatives=None):
         #Todo: Implement partial derivatives
@@ -130,11 +113,12 @@ class Kronecker_Model:
                 if element in gait_fingerprint.columns:
                     gait_fingerprint[element] = 1
         
-        gait_finterprint_vector = gait_fingerprint.values.T
+        gait_fingerprint_vector = gait_fingerprint.values.T
         
-        xi = self.personalization_map_scaled @ gait_finterprint_vector
+        xi = self.personalization_map_scaled @ gait_fingerprint_vector
         
         return row_function @ xi
+
 
     def evaluate_numpy(self,states,partial_derivatives=None):
         rows = states.shape[1]
@@ -226,6 +210,40 @@ class Kronecker_Model:
         row_vector = self.evaluate_numpy(phase_states,partial_derivatives)
 
         return row_vector @ xi
+    
+    def evaluate_gait_fingerprint_cross_model_numpy(self,states,partial_derivatives=None):
+        
+        phase_states =  states[:self.num_states].copy()
+        gait_fingerprints = states[self.num_states:].copy()
+        
+        derive = False
+
+
+        if(partial_derivatives is None):
+            local_partial_derivatives = self.no_derivatives
+        else:
+            local_partial_derivatives = partial_derivatives.copy()
+            for name in self.gait_fingerprint_names:
+                if local_partial_derivatives[name] > 0:
+                    if(derive==True):
+                        gait_fingerprints[int(name[-1])-1] = 0
+                        break
+                    else:
+                        for name_2 in self.gait_fingerprint_names:
+                            gait_fingerprints[int(name_2[-1])-1] = 0
+                        gait_fingerprints[int(name[-1])-1] = 1
+                        derive = True
+
+        #print(self.inter_subject_average_fit.shape)
+        #print((self.personalization_map @ gait_fingerprints).shape)
+        if(derive == False):
+            xi = (self.cross_model_personalization_map @ gait_fingerprints) + self.cross_model_inter_subject_average
+        else:
+            xi = (self.cross_model_personalization_map @ gait_fingerprints)
+            
+        row_vector = self.evaluate_numpy(phase_states,partial_derivatives)
+
+        return row_vector @ xi
 
 
     
@@ -254,21 +272,6 @@ class Kronecker_Model:
             RTy += R.T @ y
             yTy += y.T @ y
         
-        # try:
-
-        #     assert (np.linalg.norm(RTR-RTR.T) < 1e-7)
-            
-        #     eval_, evec_ = np.linalg.eigh(RTR)
-        #     for e in eval_:
-        #         #print("Eigenvalue is {}".format(e))
-        #         assert(e >= 1e-2)
-            
-        
-        # except AssertionError:
-        #     print("Assertion Error on RTR \n {}".format(RTR))
-        #     print("R = {}".format(R))
-
-        #     raise AssertionError
         
         return np.linalg.solve(RTR, RTy), num_rows, RTR, RTy, yTR, yTy
        
@@ -285,7 +288,7 @@ class Kronecker_Model:
             subject_dict['num_rows'] = output[1]
             subject_dict['least_squares_info'] = output[2:]
         
-    def scaled_pca(self):
+    def scaled_pca_single_model(self, XI=None):
         
         num_subjects = len(self.subjects)
         Ξ = np.array([subject['optimal_xi'] for subject in self.subjects.values()]).reshape(num_subjects,-1)
@@ -298,83 +301,15 @@ class Kronecker_Model:
 	
         #This is equation eq:inner_regressor in the paper!
        	G = G_total/N_total
-        #G = G_total/1
-
-
-        #Verify we are positive semidefinite
-        assert(np.linalg.norm(G-G.T)<1e-7)
-
-        #Diagonalize the matrix G as G = OVO
-        eig, O = np.linalg.eigh(G)
-        V = np.diagflat(eig)
-        #print("Gramian {}".format(G))
-        #Additionally, all the eigenvalues are true
-        for e in eig:
-            #print("Eigenvalue: {}".format(e))
-            assert (e >= 0)
-            assert( e > 0) # pd
-
-        # Verify that it diagonalized correctly G = O (eig) O.T
-        assert(np.linalg.norm(G - O @ V @ O.T)< 1e-7 * np.linalg.norm(G)) # passes
-
-        #This is based on the equation in eq:Qdef
-        # Q G Q = I
-        Q       = sum([O[:,[i]] @ O[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig))])
-        Qinv    = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
-
-        #Change of basis conversions
-        def param_to_orthonormal(ξ):
-            return Qinv @ ξ
-        def param_from_orthonormal(ξ):
-            return Q @ ξ
-        def matrix_to_orthonormal(Ξ):
-            return Ξ @ Qinv
-
-        #Get the average coefficients
-        ξ_avg = np.mean(Ξ, axis=0)
+           
+        #This function verifies positive semidefinite, so we dont have to
+        personalization_map_scaled, pca_info = scaled_pca(Ξ,G)
+                
+        self.inter_subject_average_fit = pca_info['inter_subject_average_fit']
         
-        #Save the intersubject average model
-        self.inter_subject_average_fit = ξ_avg[:,np.newaxis]
+        self.scaled_pca_eigenvalues = pca_info['eigenvalues']
         
-        #Substract the average coefficients
-        Ξ0 = Ξ - ξ_avg
-
-        ##Todo: The pca axis can also be obtained with pca instead of eigenvalue 
-        ## decomposition
-        #Calculate the coefficients in the orthonormal space
-        Ξ0prime = matrix_to_orthonormal(Ξ0)
-
-        #Get the covariance matrix for this
-        Σ = Ξ0prime.T @ Ξ0prime / (Ξ0prime.shape[0]-1)
-
-        #Calculate the eigendecomposition of the covariance matrix
-        ψinverted, Uinverted = np.linalg.eigh(Σ)
-
-        #Eigenvalues are obtained from smalles to bigger, make it bigger to smaller
-        ψs = np.flip(ψinverted)
-        self.scaled_pca_eigenvalues = ψs
-        Ψ = np.diagflat(ψs)
-
-        #If we change the eigenvalues we also need to change the eigenvectors
-        U = np.flip(Uinverted, axis=1)
-
-        #Run tests to make sure that this is working
-        assert(np.linalg.norm(Σ - U @ Ψ @ U.T)< 1e-7 * np.linalg.norm(Σ)) # passes
-        for i in range(len(ψs)-1):
-            assert(ψs[i] > ψs[i+1])
-
-        #Define the amount principles axis that we want
-        #η = num_gait_fingerprints
-        η=len(self.subjects)#self.num_gait_fingerprint
-        pca_axis_array = []
-
-        #Convert from the new basis back to the original basis vectors
-        for i in range (0,η):
-            pca_axis_array.append(param_from_orthonormal(U[:,i]*np.sqrt(ψs[i])))
-            
-        self.scaled_pca_components = np.array(pca_axis_array).T
-        #Return the personalization map
-        return self.scaled_pca_components[:,:self.num_gait_fingerprint]
+        return personalization_map_scaled
 
 
     def estimate_xi(self,gait_finterprint_vector):
@@ -391,7 +326,7 @@ class Kronecker_Model:
         self.pca_result = pca
         
         self.personalization_map = (pca.components_[:n,:]).T
-        self.personalization_map_scaled = self.scaled_pca()
+        self.personalization_map_scaled = self.scaled_pca_single_model()
         
         #Calculate gait fingerprints for every individual
         for subject_dict in self.subjects.values():
@@ -463,6 +398,132 @@ class Kronecker_Model:
         return self.order
 
 
+def scaled_pca(Ξ,G,num_gait_fingerprint=5):
+        
+    
+        assert_pd(G, 'G in scaled pca')
+        #Diagonalize the matrix G as G = OVO
+        eig, O = np.linalg.eigh(G)
+        V = np.diagflat(eig)
+        #print("Gramian {}".format(G))
+        #Additionally, all the eigenvalues are true
+        for e in eig:
+            #print("Eigenvalue: {}".format(e))
+            assert (e >= 0)
+            assert( e > 0) # pd
+
+        # Verify that it diagonalized correctly G = O (eig) O.T
+        assert(np.linalg.norm(G - O @ V @ O.T)< 1e-7 * np.linalg.norm(G)) # passes
+
+        #This is based on the equation in eq:Qdef
+        # Q G Q = I
+        Q       = sum([O[:,[i]] @ O[:,[i]].T * 1/np.sqrt(eig[i]) for i in range(len(eig))])
+        Qinv    = sum([O[:,[i]] @ O[:,[i]].T * np.sqrt(eig[i]) for i in range(len(eig))])
+
+        #Change of basis conversions
+        def param_to_orthonormal(ξ):
+            return Qinv @ ξ
+        def param_from_orthonormal(ξ):
+            return Q @ ξ
+        def matrix_to_orthonormal(Ξ):
+            return Ξ @ Qinv
+
+        #Get the average coefficients
+        ξ_avg = np.mean(Ξ, axis=0)
+        
+        #Save the intersubject average model
+        inter_subject_average_fit = ξ_avg[:,np.newaxis]
+        
+        #Substract the average coefficients
+        Ξ0 = Ξ - ξ_avg
+
+        ##Todo: The pca axis can also be obtained with pca instead of eigenvalue 
+        ## decomposition
+        #Calculate the coefficients in the orthonormal space
+        Ξ0prime = matrix_to_orthonormal(Ξ0)
+
+        #Get the covariance matrix for this
+        Σ = Ξ0prime.T @ Ξ0prime / (Ξ0prime.shape[0]-1)
+
+        #Calculate the eigendecomposition of the covariance matrix
+        ψinverted, Uinverted = np.linalg.eigh(Σ)
+
+        #Eigenvalues are obtained from smalles to bigger, make it bigger to smaller
+        ψs = np.flip(ψinverted)
+        scaled_pca_eigenvalues = ψs
+        Ψ = np.diagflat(ψs)
+
+        #If we change the eigenvalues we also need to change the eigenvectors
+        U = np.flip(Uinverted, axis=1)
+
+        #Run tests to make sure that this is working
+        assert(np.linalg.norm(Σ - U @ Ψ @ U.T)< 1e-7 * np.linalg.norm(Σ)) # passes
+        for i in range(len(ψs)-1):
+            assert(ψs[i] > ψs[i+1])
+
+        #Define the amount principles axis that we want
+        η = Ξ.shape[1]
+        pca_axis_array = []
+
+        #Convert from the new basis back to the original basis vectors
+        for i in range (0,η):
+            pca_axis_array.append(param_from_orthonormal(U[:,i]*np.sqrt(ψs[i])))
+            
+        scaled_pca_components = np.array(pca_axis_array).T
+        
+        pca_info = {'all_components': scaled_pca_components,
+                    'eigenvalues':scaled_pca_eigenvalues,
+                    'inter_subject_average_fit':inter_subject_average_fit}
+        #Return the personalization map
+        return scaled_pca_components[:,:num_gait_fingerprint], pca_info
+
+def calculate_cross_model_p_map(models):
+    
+    num_models = len(models)
+    
+    subjects = models[0].subjects.keys()
+    
+    XI_list = [models[0].subjects[subject]['optimal_xi'] for subject in subjects]
+    
+    for model in models[1:]: 
+        for i,subject in enumerate(subjects):    
+            XI_list[i] = np.concatenate((XI_list[i], model.subjects[subject]['optimal_xi']), axis=0)
+            
+    XI = np.array(XI_list)
+    XI = XI.reshape(XI.shape[:2])
+    
+    G_total = [0 for i in range(num_models)]
+    N_total = [0 for i in range(num_models)]
+    
+    for i, model in enumerate(models):
+        for name,subject_dict in model.subjects.items():
+            G_total[i] += subject_dict['least_squares_info'][0]
+            N_total[i] += subject_dict['num_rows']
+	
+    #This is equation eq:inner_regressor in the paper!
+    G_list = [G_total[i]/N_total[i] for i in range(num_models)]
+    
+    for individual_G in G_list: 
+        assert_pd(individual_G, "Individual G in G_list")
+    
+    #from https://stackoverflow.com/questions/42154606/python-numpy-how-to-construct-a-big-diagonal-arraymatrix-from-two-small-array
+    def diag_block_mat_boolindex(L):
+        shp = L[0].shape
+        mask = np.kron(np.eye(len(L)), np.ones(shp))==1
+        out = np.zeros(np.asarray(shp)*len(L),dtype=float)
+        out[mask] = np.concatenate(L).ravel()
+        return out
+    
+    G = diag_block_mat_boolindex(G_list)
+        
+    personalization_map, pca_info = scaled_pca(XI, G)
+    
+    for model in models:
+        model.cross_model_personalization_map = personalization_map
+        model.cross_model_inter_subject_average = pca_info['inter_subject_average_fit']
+    
+    
+
 #@vectorize(nopython=True)
 def pandas_kronecker(dataframe,funcs,partial_derivatives=None):
     rows = dataframe.shape[0]
@@ -481,7 +542,6 @@ def pandas_kronecker(dataframe,funcs,partial_derivatives=None):
     
     if partial_derivatives is not None and 'time' in partial_derivatives:
         output = (dataframe['phase_dot'].values)[:,np.newaxis]*output
-    
     
     return output
 
@@ -509,10 +569,10 @@ def train_models():
     train_models = True
     if train_models == True:
         #Determine the phase models
-        phase_model = Fourier_Basis(8,'phase')
+        phase_model = Fourier_Basis(10,'phase')
         phase_dot_model = Polynomial_Basis(1,'phase_dot')
         step_length_model = Polynomial_Basis(2,'step_length')
-        ramp_model = Polynomial_Basis(3,'ramp')
+        ramp_model = Polynomial_Basis(6,'ramp')
     
         # #Get the subjects
         left_out = [('AB10','../local-storage/test/dataport_flattened_partial_AB10.parquet')]
@@ -522,19 +582,27 @@ def train_models():
 
         model_foot = Kronecker_Model('jointangles_foot_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5)
         model_foot.add_left_out_subject(left_out)
-        model_saver(model_foot,'foot_model.pickle')
         
         model_shank = Kronecker_Model('jointangles_shank_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5)
         model_shank.add_left_out_subject(left_out)
-        model_saver(model_shank,'shank_model.pickle')
     
         model_foot_dot = copy.deepcopy(model_foot)
         model_foot_dot.time_derivative = True
-        model_saver(model_foot_dot,'foot_dot_model.pickle')
         
         model_shank_dot = copy.deepcopy(model_shank)
         model_shank_dot.time_derivative = True
-        model_saver(model_shank_dot,'shank_dot_model.pickle')
+    
+
+        #Set to true if you want to save the models        
+        if False:
+            model_saver(model_foot,'foot_model.pickle')
+            model_saver(model_shank,'shank_model.pickle')
+            model_saver(model_foot_dot,'foot_dot_model.pickle')
+            model_saver(model_shank_dot,'shank_dot_model.pickle')
+        
+        models = [model_foot, model_shank, model_foot_dot, model_shank_dot]
+        calculate_cross_model_p_map(models)
+        
         
  #%%
 def get_mean_std_dev(np_array):
@@ -552,14 +620,20 @@ def get_mean_std_dev(np_array):
         return mean, std_dev
     
     
-def get_rmse(arr1,arr2):
-    if (type(arr1) == pd.core.series.Series):
-        arr1 = arr1.values[:,np.newaxis]
+def get_rmse(estimated_angles,measured_angles):
     
-    if (type(arr2) == pd.core.series.Series):
-        arr2 = arr2.values[:,np.newaxis]
+    # #If the shape is not the same, tile the estimation
+    # if (estimated_angles.shape != measured_angles.shape):
+    #    num_repeats = int(measured_angles.shape[0]/estimated_angles.shape[0])
+    #    estimated_angles = np.tile(estimated_angles,num_repeats).reshape(-1)
+    
+    if (type(estimated_angles) == pd.core.series.Series):
+        estimated_angles = estimated_angles.values[:,np.newaxis]
+    
+    if (type(measured_angles) == pd.core.series.Series):
+        measured_angles = measured_angles.values[:,np.newaxis]
         
-    return np.sqrt(np.mean(np.power((arr1-arr2),2)))
+    return np.sqrt(np.mean(np.power((estimated_angles-measured_angles),2)))
 
 def trial_to_string(trial,joint=None):
     sign = 1
@@ -583,19 +657,21 @@ def plot_model():
 
     model_foot = model_loader('foot_model.pickle')
     model_shank = model_loader('shank_model.pickle')
+    model_dict = {'jointangles_shank_x': model_shank,
+                  'jointangles_foot_x': model_foot}
     
     #Variables
     ##########################################################################
-    subject = 'AB01'
-    model = model_foot
+    subject = 'AB10'
     joint_angle = 'jointangles_foot_x'
-    joint_str = joint_angle.split('_')[1].capitalize()
-    #trials = ['s0x8i0','s0x8i10','s1x2i0']
-    trials = ['s0x8i0']
+    model = model_dict[joint_angle]
+    trials = ['s0x8i0','s0x8i10','s1x2i0']
+    #trials = ['s0x8i0']
     #trials = list(df.trial.unique())[:]
     mean_plots = False
     ##########################################################################
     
+    joint_str = joint_angle.split('_')[1].capitalize()
     try:
         subject_dict = model.subjects[subject]
     except KeyError:

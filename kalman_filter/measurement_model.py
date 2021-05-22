@@ -57,13 +57,13 @@ def unit_test():
     from kronecker_model import Kronecker_Model, model_saver, model_loader
     
     
-    train_models = True
+    train_models = False
     if train_models == True:
         #Determine the phase models
-        phase_model = Fourier_Basis(3,'phase')
-        phase_dot_model = Polynomial_Basis(3,'phase_dot')
+        phase_model = Fourier_Basis(10,'phase')
+        phase_dot_model = Polynomial_Basis(1,'phase_dot')
         step_length_model = Polynomial_Basis(3,'step_length')
-        ramp_model = Polynomial_Basis(3,'ramp')
+        ramp_model = Polynomial_Basis(4,'ramp')
     
         # #Get the subjects
         subjects = [('AB10','../local-storage/test/dataport_flattened_partial_AB10.parquet')]
@@ -76,11 +76,11 @@ def unit_test():
         model_shank = Kronecker_Model('jointangles_shank_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5)
         model_saver(model_shank,'shank_model.pickle')
     
-        # model_foot_dot = Kronecker_Model('jointangles_foot_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=4,time_derivative=True)
-        # model_saver(model_foot_dot,'foot_dot_model.pickle')
+        model_foot_dot = Kronecker_Model('jointangles_foot_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5,time_derivative=True)
+        model_saver(model_foot_dot,'foot_dot_model.pickle')
         
-        # model_shank_dot = Kronecker_Model('jointangles_shank_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=4,time_derivative=True)
-        # model_saver(model_shank_dot,'shank_dot_model.pickle')
+        model_shank_dot = Kronecker_Model('jointangles_shank_x',phase_model,phase_dot_model,step_length_model,ramp_model,subjects=subjects,num_gait_fingerprint=5,time_derivative=True)
+        model_saver(model_shank_dot,'shank_dot_model.pickle')
         
     else:
         model_foot = model_loader('foot_model.pickle')
@@ -99,7 +99,7 @@ def unit_test():
                     'gf4': [0],
                     'gf5':[0]}
 
-    models = [model_foot,model_shank]#,model_foot_dot,model_shank_dot]
+    models = [model_foot,model_shank,model_foot_dot,model_shank_dot]
     state_names = list(initial_state_dict.keys())
     
     num_states = len(state_names)
@@ -114,10 +114,10 @@ def unit_test():
         for col in range(num_states):
             
             state_plus_delta = state.copy()
-            delta = 1e-5
+            delta = 1e-8
             state_plus_delta[col,0] += delta
-            print("State" + str(state))
-            print("State +" + str(state_plus_delta))
+            #print("State" + str(state))
+            #print("State +" + str(state_plus_delta))
             f_state = measurement_model.evaluate_h_func(state)[row]
             f_delta = measurement_model.evaluate_h_func(state_plus_delta)[row]
 
@@ -136,7 +136,7 @@ def unit_test():
     
     print("Difference" + str(manual_derivative - expected_derivative))
     
-    print("Norm of expected - manual: {}".format(np.linalg.matrix_norm(expected_derivative-manual_derivative)))
+    print("Norm of expected - manual: {}".format(np.linalg.norm(expected_derivative-manual_derivative)))
     
     #%%
 if __name__=='__main__':
