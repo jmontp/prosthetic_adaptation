@@ -13,7 +13,12 @@ from sklearn.decomposition import PCA
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from utils import assert_pd
+try:
+    from utils import assert_pd
+except ImportError:
+    from .utils import assert_pd
+    
+    
 #Model Object:
 # list of basis objects
 # string description
@@ -330,17 +335,40 @@ class Kronecker_Model:
         
         #Calculate gait fingerprints for every individual
         for subject_dict in self.subjects.values():
+            #Get least squares info
             RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
-            RTR_prime = (self.personalization_map_scaled.T) @ RTR @ self.personalization_map_scaled
-            RTy_prime = (self.personalization_map_scaled.T) @ RTy-(self.personalization_map_scaled.T) @ RTR @ self.inter_subject_average_fit
             
+            #Get scaled personalization map gait fingerprint
+            pmap = self.personalization_map_scaled
+            avg_fit = self.inter_subject_average_fit
+            
+            RTR_prime = (pmap.T) @ RTR @ pmap
+            RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
             subject_dict['gait_coefficients'] = np.linalg.solve(RTR_prime,RTy_prime)
             
-            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
-            RTR_prime = (self.personalization_map.T) @ RTR @ self.personalization_map
-            RTy_prime = (self.personalization_map.T) @ RTy-(self.personalization_map.T) @ RTR @ self.inter_subject_average_fit
+            
+            
+            #Get bad (naive pca) personalization map gait fingerprint 
+            pmap = self.personalization_map
+            avg_fit = self.inter_subject_average_fit
+            
+            RTR_prime = (pmap.T) @ RTR @ pmap
+            RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
             
             subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
+        
+        
+            #Calculate gait fingerprints based on the other cross-model personalization map
+            #Only calculate if we have the personalization map - its added by an external method
+            if(self.cross_model_personalization_map is not None): 
+                
+                pmap = self.cross_model_personalization_map
+                avg_fit = self.cross_model_inter_subject_average
+                
+                RTR_prime = (pmap.T) @ RTR @ pmap
+                RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
+                
+                subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
 
             
     def add_left_out_subject(self,subjects):
@@ -518,8 +546,14 @@ def calculate_cross_model_p_map(models):
         
     personalization_map, pca_info = scaled_pca(XI, G)
     
-    for model in models:
-        model.cross_model_personalization_map = personalization_map
+    
+    #Assign each personalization map to the corresponding model
+    #Create even splits
+    split_personalization_map = np.split(personalization_map,len(models),axis=0)
+    #set the model for each part 
+    for i,model in enumerate(models):
+        
+        model.cross_model_personalization_map = split_personalization_map[i]
         model.cross_model_inter_subject_average = pca_info['inter_subject_average_fit']
     
     
@@ -563,9 +597,9 @@ def model_loader(filename):
 def train_models():
     pass
     #%%
-    from function_bases import Fourier_Basis, Polynomial_Basis
+    from .function_bases import Fourier_Basis, Polynomial_Basis
     import copy
-    
+    ""
     train_models = True
     if train_models == True:
         #Determine the phase models
@@ -594,7 +628,7 @@ def train_models():
     
 
         #Set to true if you want to save the models        
-        if False:
+        if True:
             model_saver(model_foot,'foot_model.pickle')
             model_saver(model_shank,'shank_model.pickle')
             model_saver(model_foot_dot,'foot_dot_model.pickle')

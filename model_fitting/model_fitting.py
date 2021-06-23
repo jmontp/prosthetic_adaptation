@@ -2,7 +2,7 @@ import numpy as np
 import math
 import pickle
 from os import path
-from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp, get_subject_names
+# from data_generators import get_trials_in_numpy, get_phase_from_numpy, get_phase_dot, get_step_length, get_ramp, get_subject_names
 
 from numba import jit, cuda
 
@@ -35,57 +35,6 @@ def calculate_regression_matrix(model, *data):
 	R = regressor_matrix
 
 	return R
-
-
-#This will create a regression matrix for the subjects
-def generate_regression_matrices(model, subject_names, joint):
-
-
-	#Filename to save the regression matrix
-	filename = "local-storage/"+str(model)+joint+'.pickle'
-	#filename = str(model)+'.pickle'
-
-	#If it already exists, then just load it in
-	if(path.exists(filename)):
-		return model_loader(filename)
-
-
-
-	#Initialize dictionaries
-	output_dict = {}
-	regressor_dict = {}
-	order_dict = {}
-
-	#Get the input order
-	order = model.get_order()
-
-	#Else calculate it by hand
-	for subject in subject_names:
-
-		print("Subject " + subject)
-		#Get the data for the subject
-		output = get_trials_in_numpy(subject,joint).ravel()
-
-		order_dict['phase'] = get_phase_from_numpy(output).ravel()
-		order_dict['phase_dot'] = get_phase_dot(subject).ravel()
-		order_dict['step_length'] = get_step_length(subject).ravel()
-		order_dict['ramp'] = get_ramp(subject).ravel()
-
-		#Set the data in order
-		data = [order_dict[x] for x in order]
-
-		#Calculate the regression matrix
-		R = calculate_regression_matrix(model, *data)
-		
-		regressor_dict[subject] = (R.T@R, R.T@output)
-
-	print("Saving Model...")
-
-	result_dict = {'output_dict': output_dict, 'regressor_dict': regressor_dict}
-
-	model_saver(result_dict, filename)
-
-	return result_dict
 
 
 
