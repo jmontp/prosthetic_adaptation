@@ -356,19 +356,7 @@ class Kronecker_Model:
             RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
             
             subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
-        
-        
-            #Calculate gait fingerprints based on the other cross-model personalization map
-            #Only calculate if we have the personalization map - its added by an external method
-            if(self.cross_model_personalization_map is not None): 
-                
-                pmap = self.cross_model_personalization_map
-                avg_fit = self.cross_model_inter_subject_average
-                
-                RTR_prime = (pmap.T) @ RTR @ pmap
-                RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
-                
-                subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
+    
 
             
     def add_left_out_subject(self,subjects):
@@ -546,15 +534,39 @@ def calculate_cross_model_p_map(models):
         
     personalization_map, pca_info = scaled_pca(XI, G)
     
-    
+    avg_fit = pca_info['inter_subject_average_fit']
+    print(f'cross personalization_map {personalization_map.shape}  avg_fit:{avg_fit.shape}')    
+
     #Assign each personalization map to the corresponding model
     #Create even splits
-    split_personalization_map = np.split(personalization_map,len(models),axis=0)
+    split_personalization_map = []
+    split_average_fit = []
+    for i in range(len(models)):
+        pmap_size = int(personalization_map.shape[0]/4)
+        temp1 = personalization_map[i*pmap_size:(i+1)*pmap_size,:]
+        temp2 = avg_fit[i*pmap_size:(i+1)*pmap_size,:]
+        
+        split_personalization_map.append(temp1)
+        split_average_fit.append(temp2)
+        
     #set the model for each part 
     for i,model in enumerate(models):
         
         model.cross_model_personalization_map = split_personalization_map[i]
-        model.cross_model_inter_subject_average = pca_info['inter_subject_average_fit']
+        model.cross_model_inter_subject_average = split_average_fit[i]
+        
+        for subject_dict in model.subjects.values():
+            #Get least squares info
+            RTR, RTy, yTR, yTy = subject_dict['least_squares_info'] 
+            pmap = model.cross_model_personalization_map
+            avg_fit = model.cross_model_inter_subject_average
+            
+            print(f'i:{i} RTR: {RTR.shape}  RTy: {RTy.shape} pmap: {pmap.shape}  avg_fit: {avg_fit.shape}')
+            
+            RTR_prime = (pmap.T) @ RTR @ pmap
+            RTy_prime = (pmap.T) @ RTy - (pmap.T) @ RTR @ avg_fit
+            
+            subject_dict['cross_model_gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
     
     
 
@@ -589,9 +601,12 @@ def model_saver(model,filename):
 def model_loader(filename):
     with open(filename,'rb') as file:
         return pickle.load(file)
-####################################################################################
-#//////////////////////////////////////////////////////////////////////////////////#
-####################################################################################
+    
+    
+    
+########################################################################################################################################################################
+#//////////////////////////////////////////////////////////////////////////////////##//////////////////////////////////////////////////////////////////////////////////#
+########################################################################################################################################################################
 
 
 def train_models():
@@ -910,7 +925,22 @@ def validate_velocity_derivative():
     axs[1].legend([ 'measured foot angle', 'calculated foot angle'])
     axs[1].grid(True)
     plt.show()
+
+#%%
+def cross_model_gait_fingerprint_unit_test():
+#%%
+    model_foot = model_loader('foot_model.pickle')
+    model_shank = model_loader('shank_model.pickle')
+    model_foot_dot = model_loader('foot_dot_model.pickle')
+    model_shank_dot = model_loader('shank_dot_model.pickle')
     
+    models = [model_foot, model_shank, model_foot_dot, model_shank_dot]
+    
+    calculate_cross_model_p_map(models)
+    
+    
+
+
 #%%
 if __name__=='__main__':
     pass
