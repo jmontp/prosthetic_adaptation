@@ -158,10 +158,10 @@ def quick_flatten_dataport():
         df['phase_dot'] = np.concatenate(phase_dot_list, axis = 0)
         df['step_length'] = np.concatenate(step_length_list,axis=0)
         #Comment out to not save
-        #df.to_parquet(save_name)
+        df.to_parquet(save_name)
         
         #Uncomment break to just get one person
-        break
+        #break
 #%%
 def add_global_shank_angle():
     pass
@@ -198,6 +198,6 @@ def add_global_shank_angle():
 
 #%%            
 if __name__ == '__main__':
-    #quick_flatten_dataport()
-    #add_global_shank_angle()
+    quick_flatten_dataport()
+    add_global_shank_angle()
     pass

@@ -25,22 +25,24 @@ test_arssertions = True
 class Extended_Kalman_Filter:
 
     def __init__(self,initial_state,initial_covariance,dynamic_model,process_noise,measurement_model,observation_noise):
-        self. dynamic_model = dynamic_model
+        self.dynamic_model = dynamic_model
         self.measurement_model = measurement_model
         self.x = initial_state
         self.P = initial_covariance
         self.Q = process_noise
         self.R = observation_noise
         self.calculated_measurement_ = None
+        self.num_states = initial_state.shape[0]
 
 
     #Calculate the next estimate of the kalman filter
     def calculate_next_estimates(self, time_step, control_input_u, sensor_measurements):
         
         predicted_state, predicted_covariance = self.preditction_step(time_step)
+        self.predicted_state = predicted_state
+        self.predicted_covariance = predicted_covariance
+        
         updated_state, updated_covariance = self.update_step(predicted_state, predicted_covariance, sensor_measurements)
-
-
         self.x = updated_state
         self.P = updated_covariance
 
@@ -67,51 +69,36 @@ class Extended_Kalman_Filter:
     
     #This function will calculate the new state based on the predicted state
     def update_step(self, predicted_state, predicted_covariance, sensor_measurements):
-        #print("sensor measurements" + str(sensor_measurements))
+
         #Calculate the expected measurements (z)
         expected_measurements = self.measurement_model.evaluate_h_func(predicted_state)
-        #print("Expected Measurements" + str(expected_measurements))
+        self.calculated_measurement_ = expected_measurements
 
         #Calculate the innovation
-        #print("Sensor shape " + str(sensor_measurements.shape) + "Expected shape " + str(expected_measurements.shape))
-        self.calculated_measurement_ = expected_measurements
+        y_tilde = (sensor_measurements - expected_measurements)
+        self.y_tilde = y_tilde
         
-        y_hat = sensor_measurements - expected_measurements
-    
         #Get the jacobian for the measurement function
         H = self.measurement_model.evaluate_dh_func(predicted_state)
-        
-        
-        assert_pd(predicted_covariance,"Predicted Covariance")
-        # print("")
-        # print("predicted state {}".format(predicted_state))
-        # print("H matrix {}".format(H))
-        # print("H shape" + str(H.shape))
-        # print("predicted covar shape" + str(predicted_covariance.shape))
-        # print("H rank: " + str(np.linalg.matrix_rank(H)))
-        # print("P rank: " + str(np.linalg.matrix_rank(predicted_covariance)))
 
         #Calculate the innovation covariance
         S = H @ predicted_covariance @ H.T + self.R
         
+        #Verify if S is PD
         assert_pd(S-self.R, "S-R")
-        assert_pd(S, "S")
         
         #Calculate the Kalman Gain
         K = predicted_covariance @ H.T @ np.linalg.inv(S)
-        #Calculate the updated state
-        #predicted_state_vector = predicted_state.values.T
-        #updated_state_vector = predicted_state_vector + K @ y_hat
-        updated_state = predicted_state + K @ y_hat
-
-
-        #print("ekf: Updated state vector" + str(updated_state_vector))
-        #copy the column names
-        #updated_state = pd.DataFrame(updated_state_vector.T,columns=predicted_state.columns)
-        #predicted_state.iloc[0] = updated_state_vector.ravel()
-        #Calculate the updated covariance
-        updated_covariance = predicted_covariance - K @ H @ predicted_covariance
         
+        #Calculate the updated state
+        self.delta_state = K @ y_tilde
+        updated_state = predicted_state + self.delta_state
+
+        #Calculate the updated covariance
+        I = np.eye(self.num_states)
+        updated_covariance = (I - K @ H) @ predicted_covariance
+        
+        #Verify that updated covariance is done
         assert_pd(updated_covariance, "Updated Covariance")
         
         return updated_state, updated_covariance
@@ -136,12 +123,13 @@ def ekf_unit_test():
                     'gf1': [0],
                     'gf2': [0],
                     'gf3': [0],
-                    'gf4': [0]}
+                    'gf4': [0],
+                    'gf5': [0]}
 
     # initial_state = pd.DataFrame(initial_state_dict)
     #Phase, Phase, Dot, Step_length, ramp
     initial_state = np.array([[0.5,0.5,0.5,0.5,
-                                0.5,0.5,0.5,0.5]]).T
+                                0.5,0.5,0.5,0.5,0.5]]).T
     train_models = False
     if train_models == True:
         #Determine the phase models
@@ -207,7 +195,7 @@ def ekf_unit_test():
     sensor_measurements = np.array([[1,1,1,1]]).T
 
     iterations = 100 
-    state_history = np.zeros((iterations,8))
+    state_history = np.zeros((iterations,len(initial_state)))
 
     try:
         for i in range(iterations):
@@ -219,6 +207,87 @@ def ekf_unit_test():
     plt.plot(state_history[:,:])
     plt.show()
 
+
+
+def ekf_unit_test_simple_model():
+    #%%
+    #Mass spring system
+    
+    #state = [x,xdot]
+    #state_dot = [xdot, xddot]
+    
+    #state_k+1 = R*state, R = rotation matrix with det 1 
+    #(you are not adding or subtracting energy from the system)
+    
+    
+    
+    class SimpleDynamicModel():
+        
+        def __init__(self):
+            #Rotation matrix to represent state dynamics
+            self.R = lambda theta: np.array([[np.cos(theta),np.sin(theta)],
+                                             [-np.sin(theta),np.cos(theta)]])
+            #Rotational velocity in radians per sec
+            self.omega = 2
+        
+        def f_jacobean(self, current_state, time_step):
+            return self.R(self.omega*time_step)
+            
+        def f_function(self, current_state, time_step):
+            return self.R(self.omega*time_step) @ current_state    
+            
+            
+            
+    class SimpleMeasurementModel():
+        
+        def evaluate_h_func(self,current_state):
+            return np.eye(2) @ current_state
+        
+        def evaluate_dh_func(self,current_state):
+            return np.eye(2)    
+
+    #Setup simulation
+    initial_state = np.array([[0,1]]).T
+    initial_state_covariance = np.eye(2)*1e-7
+    
+    d_model = SimpleDynamicModel()
+    measurement_model = SimpleMeasurementModel()
+    
+    #Sensor noise    
+    R = np.eye(2)
+    
+    #Process noise
+    Q = np.eye(2)*1e-2
+    
+    ekf = Extended_Kalman_Filter(initial_state,initial_state_covariance, d_model, Q, measurement_model, R)
+
+
+    actual_state = np.array([[1,0]]).T
+    
+    #Setup time shenanigans
+    iterations = 1001
+    total_time = 10    
+    iterator = np.linspace(0,total_time,iterations)
+    time_step = iterator[1] - iterator[0]
+
+    #Setup state history tracking
+    state_history = np.zeros((iterations,2*len(initial_state)))
+
+    for i,t in enumerate(iterator):
+        
+        actual_state = d_model.f_function(actual_state, time_step)
+        
+        predicted_state,_ = ekf.calculate_next_estimates(time_step, 0, actual_state)
+        
+        state_history[i,:2] = predicted_state.T
+        state_history[i,2:] = actual_state.T
+        
+    #%matplotlib qt
+    plt.plot(state_history)
+    plt.legend(["Predicted Position", "Predicted Velocity", 
+                "Actual Position", "Actual Velocity"])
+    plt.show()
+    #%%
 def profiling():
     pass
 #%%
@@ -230,4 +299,5 @@ def profiling():
 
 #%%
 if(__name__=='__main__'):
-    ekf_unit_test()
+    #ekf_unit_test()
+    ekf_unit_test_simple_model()

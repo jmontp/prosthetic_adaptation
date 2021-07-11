@@ -21,25 +21,44 @@ class Measurement_Model():
         print('states!' + str(state_names))
         self.partial_derivatives = {state : models[0].get_partial_derivatives([state]) for state in state_names}
         
+        
+        
     def evaluate_h_func(self,current_state):
         #get the output
         #print("Measurement Model: Current State" + str(current_state))
-        result = [model.evaluate_gait_fingerprint_numpy(current_state) for model in self.models]
+        result = [model.evaluate_gait_fingerprint_cross_model_numpy(current_state) for model in self.models]
         return np.array(result).reshape(self.num_outputs,-1)
 
 
 
     def evaluate_dh_func(self,current_state):
-        result = np.zeros((self.len_models,self.len_states))
-        for i,model in enumerate(self.models):
-            state_derivatives = [model.evaluate_gait_fingerprint_numpy(current_state,self.partial_derivatives[state_name]) for state_name in self.states]
-            result[i,:] = state_derivatives
-        
+        # result = np.zeros((self.len_models,self.len_states))
+        # for i,model in enumerate(self.models):
+        #     state_derivatives = [model.evaluate_gait_fingerprint_numpy(current_state,self.partial_derivatives[state_name]) for state_name in self.states]
+        #     result[i,:] = state_derivatives
+        result = self.numerical_jacobean(current_state)
         return result
         #return np.array(result).reshape(self.num_outputs,-1)
 
 
+    def numerical_jacobean(self, current_state):
+        #create buffer for the derivative
+        manual_derivative = np.zeros((self.len_models,self.len_states))
+        #We are going to fill it element-wise
+        #col represents the current state
+        for col in range(self.len_states):
+            state_plus_delta = current_state.copy()
+            delta = 1e-4
+            state_plus_delta[col,0] += delta
+            #print("State" + str(state))
+            #print("State +" + str(state_plus_delta))
+            #Evaluate the model and extract it 
+            f_state = self.evaluate_h_func(current_state)
+            f_delta = self.evaluate_h_func(state_plus_delta)
 
+            manual_derivative[:,col] = ((f_delta-f_state)/(delta)).T
+            
+        return manual_derivative
 
 def unit_test():
     pass
@@ -49,10 +68,8 @@ def unit_test():
     SCRIPT_DIR = os.path.dirname(os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__))))
     new_path = os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT))
     print(new_path)
-    sys.path.insert(1,new_path)
-    
-    import numpy as np 
-    
+    sys.path.insert(0,new_path)
+        
     from function_bases import Polynomial_Basis, Fourier_Basis 
     from kronecker_model import Kronecker_Model, model_saver, model_loader
     
@@ -83,10 +100,10 @@ def unit_test():
         model_saver(model_shank_dot,'shank_dot_model.pickle')
         
     else:
-        model_foot = model_loader('foot_model.pickle')
-        model_shank = model_loader('shank_model.pickle')
-        model_foot_dot = model_loader('foot_dot_model.pickle')
-        model_shank_dot = model_loader('shank_dot_model.pickle')
+        model_foot = model_loader('../model_fitting/foot_model.pickle')
+        model_shank = model_loader('../model_fitting/shank_model.pickle')
+        model_foot_dot = model_loader('../model_fitting/foot_dot_model.pickle')
+        model_shank_dot = model_loader('../model_fitting/shank_dot_model.pickle')
         
     
     initial_state_dict = {'phase': [0],
@@ -114,7 +131,7 @@ def unit_test():
         for col in range(num_states):
             
             state_plus_delta = state.copy()
-            delta = 1e-8
+            delta = 1e-14
             state_plus_delta[col,0] += delta
             #print("State" + str(state))
             #print("State +" + str(state_plus_delta))

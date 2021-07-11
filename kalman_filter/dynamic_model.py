@@ -25,19 +25,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-class Dynamic_Model:
-
-    #Initial States is a dictionary that will contain a variable name
-    # for every state and the initial value for that state
-    def __init__(self):
-        pass
-
-    def get_predicted_state(self,current_state,time_step,control_input_u):
-        pass
-
-
-
-class Gait_Dynamic_Model(Dynamic_Model):
+class Gait_Dynamic_Model():
 
     def __init__(self):
         pass
@@ -46,13 +34,11 @@ class Gait_Dynamic_Model(Dynamic_Model):
     # the phase_dot and the timestep. It is assumed that the phase_dot is the 
     # second element in the state vector
     def f_jacobean(self, current_state, time_step):
-        #print(current_state)
+        
         amount_of_states = current_state.shape[0]
-        #print(amount_of_states)
 
         #All the states will stay the same except for the first one
         jacobean = np.eye(amount_of_states)
-
 
         #Add the integrator corresponding to phase dot
         jacobean[0,1] = time_step
@@ -61,23 +47,7 @@ class Gait_Dynamic_Model(Dynamic_Model):
 
     #This is a linar function based on the jacobean its pretty straighforward to calculate
     def f_function(self, current_state, time_step):
-        
-        #Essentially we want to calculate dot x = Ax
-        #jacobean = self.f_jacobean(current_state,time_step)
 
-        #current_state_vector = current_state.values.T
-        
-        #Copy the column name
-        #result = current_state.copy
-
-
-        #Set the result
-        #result[0] = jacobean @ current_state_vector
-
-        #compact implementation
-        #result = current_state.copy()
-
-        #result['phase'] = result['phase'] + result['phase_dot']*time_step
         current_state[0,0] = current_state[0,0] + current_state[1,0]*time_step
         
         integer_part = np.floor(np.abs(current_state[0,0]))

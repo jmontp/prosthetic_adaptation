@@ -58,6 +58,10 @@ class Kronecker_Model:
         self.no_derivatives = {val:0 for val in (self.order+self.gait_fingerprint_names)}
         print(self.no_derivatives)
         #Todo: Add average pca coefficient
+        self.cross_model_personalization_map = None
+        self.cross_model_inter_subject_average = None
+        self.cross_model_gait_coefficients_unscaled = None
+        self.cross_model_gait_fingerprint_unit_test = None
         
         self.combined_model_personalization_map = None
         
@@ -277,8 +281,13 @@ class Kronecker_Model:
             RTy += R.T @ y
             yTy += y.T @ y
         
-        
-        return np.linalg.solve(RTR, RTy), num_rows, RTR, RTy, yTR, yTy
+        try:
+            result = (np.linalg.solve(RTR, RTy), num_rows, RTR, RTy, yTR, yTy)
+        except:
+            print('Singular RTR in optimal fit least squares')
+            result = (0, num_rows, RTR, RTy, yTR, yTy)
+
+        return result
        
 
 
@@ -335,6 +344,7 @@ class Kronecker_Model:
         
         #Calculate gait fingerprints for every individual
         for subject_dict in self.subjects.values():
+
             #Get least squares info
             RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
             
@@ -373,6 +383,9 @@ class Kronecker_Model:
             subject_dict = self.one_left_out_subjects[subject]        
             print("One left out fit: " + subject)
             data = subject_dict['dataframe']
+
+            #Temporary addition to try to fit with only walking data
+            #data = data[data['ramp'] == 0.0]
             
             output = self.least_squares(data,self.output_name)
             subject_dict['optimal_xi'] = output[0]
@@ -388,9 +401,10 @@ class Kronecker_Model:
             RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
             RTR_prime = (self.personalization_map.T) @ RTR @ self.personalization_map
             RTy_prime = (self.personalization_map.T) @ RTy-(self.personalization_map.T) @ RTR @ self.inter_subject_average_fit
+            #print(f'asset')            
             
             subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
-
+            
 
 
     def __str__(self):
@@ -550,16 +564,16 @@ def calculate_cross_model_p_map(models):
         split_average_fit.append(temp2)
         
     #set the model for each part 
-    for i,model in enumerate(models):
+    for i,mod in enumerate(models):
         
-        model.cross_model_personalization_map = split_personalization_map[i]
-        model.cross_model_inter_subject_average = split_average_fit[i]
+        mod.cross_model_personalization_map = split_personalization_map[i]
+        mod.cross_model_inter_subject_average = split_average_fit[i]
         
-        for subject_dict in model.subjects.values():
+        for subject_dict in mod.subjects.values():
             #Get least squares info
             RTR, RTy, yTR, yTy = subject_dict['least_squares_info'] 
-            pmap = model.cross_model_personalization_map
-            avg_fit = model.cross_model_inter_subject_average
+            pmap = mod.cross_model_personalization_map
+            avg_fit = mod.cross_model_inter_subject_average
             
             print(f'i:{i} RTR: {RTR.shape}  RTy: {RTy.shape} pmap: {pmap.shape}  avg_fit: {avg_fit.shape}')
             
@@ -612,13 +626,13 @@ def model_loader(filename):
 def train_models():
     pass
     #%%
-    from .function_bases import Fourier_Basis, Polynomial_Basis
+    from function_bases import Fourier_Basis, Polynomial_Basis
     import copy
     ""
     train_models = True
     if train_models == True:
         #Determine the phase models
-        phase_model = Fourier_Basis(10,'phase')
+        phase_model = Fourier_Basis(8,'phase')
         phase_dot_model = Polynomial_Basis(1,'phase_dot')
         step_length_model = Polynomial_Basis(2,'step_length')
         ramp_model = Polynomial_Basis(6,'ramp')
@@ -637,11 +651,17 @@ def train_models():
     
         model_foot_dot = copy.deepcopy(model_foot)
         model_foot_dot.time_derivative = True
+        model_foot_dot.output_name = 'jointangles_foot_dot_x'
         
         model_shank_dot = copy.deepcopy(model_shank)
         model_shank_dot.time_derivative = True
+        model_shank_dot.output_name = 'jointangles_shank_dot_x'
     
-
+        print("Calculating cross models")
+        models = [model_foot, model_shank, model_foot_dot, model_shank_dot]
+        calculate_cross_model_p_map(models)
+        
+        
         #Set to true if you want to save the models        
         if True:
             model_saver(model_foot,'foot_model.pickle')
@@ -649,8 +669,7 @@ def train_models():
             model_saver(model_foot_dot,'foot_dot_model.pickle')
             model_saver(model_shank_dot,'shank_dot_model.pickle')
         
-        models = [model_foot, model_shank, model_foot_dot, model_shank_dot]
-        calculate_cross_model_p_map(models)
+      
         
         
  #%%
