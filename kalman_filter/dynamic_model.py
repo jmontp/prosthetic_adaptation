@@ -1,26 +1,4 @@
 
-#Idea: intialize state with dictionary, but then how to do covariance? double dictionary? That actually makes sense. 
-
-#However that sounds like a pain in the ass to update. However, that can be done internally.
-
-#I guess that the measurement function should also output expected measurements in a dictionary and have it compare to 
-# dictionary inputs
-
-
-
-
-#I think that everything should have the key-value pairs assigned to them
-
-#I also think that I should take some time to design this right
-
-
-#Large features to implement:
-## Make everything dictionary based
-## This makes sure that there is no fat fingering of inputs where they dont belong.
-### Should be easy to implement with functions that convert 2d and 2d dicts and np arrays back and forth between them
-
-
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -45,7 +23,8 @@ class Gait_Dynamic_Model():
 
         return jacobean
 
-    #This is a linar function based on the jacobean its pretty straighforward to calculate
+    #This is a linar function based on the jacobean its pretty straighforward 
+    #to calculate
     def f_function(self, current_state, time_step):
 
         current_state[0,0] = current_state[0,0] + current_state[1,0]*time_step
@@ -105,3 +84,6 @@ def dynamic_model_unit_test():
 
 if __name__ == '__main__':
     dynamic_model_unit_test()
+    
+    
+##TODO Log

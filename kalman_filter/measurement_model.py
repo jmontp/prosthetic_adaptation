@@ -36,10 +36,10 @@ class Measurement_Model():
         # for i,model in enumerate(self.models):
         #     state_derivatives = [model.evaluate_gait_fingerprint_numpy(current_state,self.partial_derivatives[state_name]) for state_name in self.states]
         #     result[i,:] = state_derivatives
+        #return np.array(result).reshape(self.num_outputs,-1)
+        
         result = self.numerical_jacobean(current_state)
         return result
-        #return np.array(result).reshape(self.num_outputs,-1)
-
 
     def numerical_jacobean(self, current_state):
         #create buffer for the derivative
@@ -48,7 +48,7 @@ class Measurement_Model():
         #col represents the current state
         for col in range(self.len_states):
             state_plus_delta = current_state.copy()
-            delta = 1e-4
+            delta = 1e-6
             state_plus_delta[col,0] += delta
             #print("State" + str(state))
             #print("State +" + str(state_plus_delta))
