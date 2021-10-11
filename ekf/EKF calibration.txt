@@ -1,0 +1,15 @@
+Shank - Foot EKF calibration 
+
+  #Measurement covarience, Innovation
+    #Safe
+    #r_diag = [25,25,3000,3000]
+    #Test
+    r_diag = [25,25,25,3000,3000,3000]
+    #Do not trust the sensor at all, turn off innovation and just use dynamic model
+    #r_diag = [1e8,1e8,1e8,1e8]
+    #Trust the sensors a lot
+    #r_diag = [65,65,65,65]
+    R = np.diag(r_diag)
+
+
+    
