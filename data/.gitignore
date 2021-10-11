@@ -1,0 +1,5 @@
+#This gitignore is meant to not save everythign in the folder
+# but keep the folder itself
+*
+*/
+!.gitignore
