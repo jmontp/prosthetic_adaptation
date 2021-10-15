@@ -14,3 +14,12 @@ There are additional scripts to standardize datasets into python-friendly parque
 
 
 [//]: <> (https://github.com/jehna/readme-best-practices/blob/master/README-default.md)
+
+
+
+
+# Install 
+
+Run in the parent folder containing the repo
+
+> python3 -m pip install -e prosthetic_adaptation/
