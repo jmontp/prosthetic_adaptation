@@ -103,7 +103,7 @@ The corresponding numpy arraw that would be sent would look like
 
 
 
-$$
+<!-- $$
 \begin{equation*}
     \text{data} = 
         \begin{bmatrix} 
@@ -114,7 +114,9 @@ $$
     
         \end{bmatrix}
 \end{equation*}
-$$
+$$ --> 
+
+<div align="center"><img style="background: white;" src="https://render.githubusercontent.com/render/math?math=%5Cbegin%7Bequation*%7D%0A%20%20%20%20%5Ctext%7Bdata%7D%20%3D%20%0A%20%20%20%20%20%20%20%20%5Cbegin%7Bbmatrix%7D%20%0A%20%20%20%20%20%20%20%20%20%20%20%20phase_0%20%26%20%5Cdots%20%26%20phase_n%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20phase%5C_dot_0%20%26%20%5Cdots%20%26%20phase%5C_dot_n%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20ramp_0%20%26%20%5Cdots%20%26%20ramp_n%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20stride_0%20%26%20%5Cdots%20%26%20stride_n%0A%20%20%20%20%0A%20%20%20%20%20%20%20%20%5Cend%7Bbmatrix%7D%0A%5Cend%7Bequation*%7D"></div>
  
 Were n is the amount of columns of data that we send over. Note that the rows each correspond to the labels as they are defined and that we do not specify the width of the data block in the plot configuration. This means that we can send over as many columns of information as we want as long as it does not exceed the window width (WINDOW_WIDTH in server.py).
 
@@ -131,7 +133,7 @@ plot_1_config = {'names': ['phase', 'phase_dot', 'stride_length'],
 plot_2_config = {'names': [f"gf{i+1}" for i in range(5)]} 
 ```
 
-$$
+<!-- $$
 \begin{equation*}
     \text{data} = 
         \begin{bmatrix} 
@@ -146,7 +148,9 @@ $$
           
         \end{bmatrix}
 \end{equation*}
-$$
+$$ --> 
+
+<div align="center"><img style="background: white;" src="https://render.githubusercontent.com/render/math?math=%5Cbegin%7Bequation*%7D%0A%20%20%20%20%5Ctext%7Bdata%7D%20%3D%20%0A%20%20%20%20%20%20%20%20%5Cbegin%7Bbmatrix%7D%20%0A%20%20%20%20%20%20%20%20%20%20%20%20phase_0%20%26%20%5Cdots%20%26%20phase_n%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20phase%5C_dot_0%20%26%20%5Cdots%20%26%20phase%5C_dot_n%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20stride_0%20%26%20%5Cdots%20%26%20stride_n%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20gf_%7B1_0%7D%20%26%20%5Cdots%20%26%20gf_%7B1_n%7D%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20gf_%7B2_0%7D%20%26%20%5Cdots%20%26%20gf_%7B2_n%7D%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20gf_%7B3_0%7D%20%26%20%5Cdots%20%26%20gf_%7B3_n%7D%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20gf_%7B4_0%7D%20%26%20%5Cdots%20%26%20gf_%7B4_n%7D%20%5C%5C%0A%20%20%20%20%20%20%20%20%20%20%20%20gf_%7B5_0%7D%20%26%20%5Cdots%20%26%20gf_%7B5_n%7D%20%20%20%20%20%20%20%20%20%20%20%0A%20%20%20%20%20%20%20%20%20%20%0A%20%20%20%20%20%20%20%20%5Cend%7Bbmatrix%7D%0A%5Cend%7Bequation*%7D"></div>
  
 
  Once the data is formatted appropriately, it is sent to the client by 
