@@ -1,4 +1,4 @@
-![Logo of the project](.images/signature-stationery.png)
+![Logo of the project](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/signature-stationery.png)
 
 # Real Time Plotting with pyqtgraph and zmq
 
