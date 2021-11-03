@@ -5,27 +5,14 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 
 
 """
-#H is the partial derivative of the model with respect to the state variables and the pca axis coefficient variables 
-#The partial derivative with respect to the state variable is the derivative of the function row for the row function vector for that particular state variable kroneckerd with he other normal funcitons
-#The partial derivative with respect to he pca axis is just the pca axis times the kronecker productl
-import pandas as pd
-import numpy as np
-#import cupy as np
-import math
-import pickle
-from os import path
-from sklearn.decomposition import PCA
-from functools import lru_cache
 
-#--------------------------
-#Need to create two objects:
-#Basis object:
-# basis(x): takes input and returns the value
-# basis_name:
-# basis size
-# basis params
-# variable name
-#Dont use basis directly, its just a blueprint to what you need to implement
+
+#TODO - It might be a good idea to implement numeric differentiation here
+
+
+import numpy as np
+
+
 class Basis:
     def __init__(self, n, var_name):
         self.n = n
@@ -57,48 +44,12 @@ class PolynomialBasis(Basis):
 
     #This function will evaluate the model at the given x value
     def evaluate(self,x):
-        #result = [math.pow(x,i) for i in range(0,self.n)]
-        #Power will evaluate elementwise by the power defined in the second 
-        #argument. Arrange will generate a list from 0-n-1, therefore it will 
-        #evaluate the power of each element
-        x_array = np.repeat(x,self.n,axis=1)
-        power_array = np.arange(self.n)
-        output = np.power(x_array,power_array)
-        return output
-
-    #This function will evaluate the derivative of the model at the given 
-    # x value
-    #TODO: Unit test please, please please
-    def evaluate_derivative(self,x,num_derivatives=1):
-        if(num_derivatives == 0):
-            return self.evaluate(x)
-        
-        if(num_derivatives < self.size):
-            
-            x_array = np.repeat(x,self.size,axis=1)
-            coefficient_array = np.arange(self.n)
-            temp_array = np.arange(self.n)
-            
-            for i in range(1,num_derivatives):
-                temp_array = temp_array-1
-                coefficient_array = coefficient_array*(temp_array)
-                
-            
-            #Generate power array
-            power_array = np.arange(-num_derivatives,self.size-num_derivatives)
-            #Set negative indices to zero
-            power_array = np.where(power_array<0,0,power_array)
-            
-            return (np.power(x_array,power_array)*coefficient_array)
-        else:
-            return np.repeat(0,self.size)
-
+       return np.polynomial.polynomial.polyvander(x, self.n-1)
          
 
 
 #This will create a Polynomial Basis with n harmonic frequencies
 # The variable name is also needed
-
 class FourierBasis(Basis):
     def __init__(self, n, var_name):
         Basis.__init__(self, n, var_name)
@@ -106,50 +57,45 @@ class FourierBasis(Basis):
 
     #This function will evaluate the model at the given x value
     def evaluate(self,x):
+        x = x.reshape(-1,1)
+
         #l is used to generate the coefficients of the series
         l = np.arange(1,self.n+1).reshape(1,-1)
         
         #Initialize everything as one to get 
         result = np.ones((x.shape[0],self.size))
        
-        #Add the sine and cos part
         result[:,1:self.n+1] = np.cos(2*np.pi*x @ l)
         result[:,self.n+1:] =  np.sin(2*np.pi*x @ l)
         return result
 
 
-    #This function will evaluate the derivative of the model at the given 
-    # x value
-    def evaluate_derivative(self,x,num_derivatives=1):
-        if (num_derivatives == 0):
-            return self.evaluate(x)
-        
-        #l is used to generate the coefficients of the series
-        l = np.arange(1,self.n+1).reshape(1,-1)
-        
-        #Initialize everything as one to get 
-        result = np.zeros((x.shape[0],self.size))
-        
-        #Add the sine and cos part
-        #https://www.wolframalpha.com/input/?i=d%5En+cos%282*pi*a*x%29%2Fdx%5En
-        result[:,1:self.n+1] = np.power((2*np.pi*l),num_derivatives)*np.cos(0.5*np.pi*(num_derivatives + 4*x @ l)) 
-        #https://www.wolframalpha.com/input/?i=d%5En+sin%282*pi*a*x%29%2Fdx%5En
-        result[:,self.n+1:] =  np.power((2*np.pi*l),num_derivatives)*np.sin(0.5*np.pi*(num_derivatives + 4*x @ l))
-        
-        return result
-
-
-#Not really using this right now so keeping in the old format
-class BernsteinBasis(Basis):
-
+class LegendreBasis(Basis):
+    "Legendre polynomials are on [-1,1]"
     def __init__(self, n, var_name):
         Basis.__init__(self, n, var_name)
         self.size = n
 
     def evaluate(self,x):
-        basis = [math.comb(self.n,i)*math.pow(x,i)*math.pow((1-x),(self.n-i)) for i in range(0,self.n+1)];
-        return np.array(basis)
+        return np.polynomial.legendre.legvander(x, self.n-1)
 
-    def evaluate_derivative(self,x):
-        #raise NotImplementedError "Bernstain Basis derivative not implmented"
-        pass
+
+class ChebyshevBasis(Basis):
+
+    "Chebyshev polynomials are on [-1,1]"
+    def __init__(self, n, var_name):
+        Basis.__init__(self, n, var_name)
+        self.size = n
+    
+    def evaluate(self, x):
+        return np.polynomial.chebyshev.chebvander(x, self.n-1)
+
+
+class HermiteBasis(Basis):
+    "Hermite polynomials are on [-inf,inf]"
+    def __init__(self, n, var_name):
+        Basis.__init__(self, n, var_name)
+        self.size = n
+
+    def evaluate(self,x):
+        return np.polynomial.hermite_e.hermevander(x, self.n-1)
