@@ -103,7 +103,7 @@ The corresponding numpy arraw that would be sent would look like
 
 
 
-<img src="https://render.githubusercontent.com/render/math?math=
+$$
 \begin{equation*}
     \text{data} = 
         \begin{bmatrix} 
@@ -111,9 +111,10 @@ The corresponding numpy arraw that would be sent would look like
             phase\_dot_0 & \dots & phase\_dot_n \\
             ramp_0 & \dots & ramp_n \\
             stride_0 & \dots & stride_n
+    
         \end{bmatrix}
 \end{equation*}
-">
+$$
  
 Were n is the amount of columns of data that we send over. Note that the rows each correspond to the labels as they are defined and that we do not specify the width of the data block in the plot configuration. This means that we can send over as many columns of information as we want as long as it does not exceed the window width (WINDOW_WIDTH in server.py).
 
@@ -130,7 +131,7 @@ plot_1_config = {'names': ['phase', 'phase_dot', 'stride_length'],
 plot_2_config = {'names': [f"gf{i+1}" for i in range(5)]} 
 ```
 
-<img src="https://render.githubusercontent.com/render/math?math=
+$$
 \begin{equation*}
     \text{data} = 
         \begin{bmatrix} 
@@ -142,9 +143,11 @@ plot_2_config = {'names': [f"gf{i+1}" for i in range(5)]}
             gf_{3_0} & \dots & gf_{3_n} \\
             gf_{4_0} & \dots & gf_{4_n} \\
             gf_{5_0} & \dots & gf_{5_n}           
+          
         \end{bmatrix}
 \end{equation*}
-">
+$$
+ 
 
  Once the data is formatted appropriately, it is sent to the client by 
 
