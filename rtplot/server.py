@@ -26,8 +26,14 @@ WINDOW_WIDTH = 200
 
 #Create the plot from the json file that is passed in
 def initialize_plot(json_config):
-    win = pg.GraphicsWindow(title="Random Number Generator") # creates a window
+    
+    #Set background white
+    pg.setConfigOption('background', 'w')
+    pg.setConfigOption('foreground', 'k')
 
+    win = pg.GraphicsWindow(title="Random Number Generator") # creates a window
+   
+    
     #Array of number per plot and array of pointer to plots
     subplot_per_plot = []
     subplots = []
@@ -80,7 +86,9 @@ def initialize_plot(json_config):
             pen = pg.mkPen(color = colors[i], style=line_style[i])
             subplots.append(new_plot.plot(name=trace_names[i], pen=pen))
 
+    print("Initialized Plot!")
     return subplot_per_plot, subplots, num_plots, win
+
 
 #Receive a numpy array
 def recv_array(socket, flags=0, copy=True, track=False):
@@ -95,7 +103,6 @@ def recv_array(socket, flags=0, copy=True, track=False):
 
 
 try:
-    
     initialized_plot = False
     while True:
         #Do not continue unless you have initialized the plot
@@ -112,7 +119,7 @@ try:
 
         #Read some data and plot it
         else:
-            
+            print("Waiting for data...")
             #Read in numpy array
             receive_np_array = recv_array(socket)
             #Get how many new values are in it

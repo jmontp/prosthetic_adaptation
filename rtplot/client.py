@@ -21,7 +21,7 @@ socket = context.socket(zmq.REQ)
 socket.connect("tcp://127.0.0.1:5555")
 
 
-def send_array(socket, A, flags=0, copy=True, track=False):
+def send_array(A, flags=0, copy=True, track=False):
     """send a numpy array with metadata"""
     md = dict(
         dtype = str(A.dtype),
@@ -31,7 +31,10 @@ def send_array(socket, A, flags=0, copy=True, track=False):
     return socket.send(A, flags, copy=copy, track=track)
 
 
-
+def wait_for_response():
+     #  Get the reply.
+    message = socket.recv()
+    print("Received reply %s [ %s ]" % (0, message))
 
 
 def initialize_plots(plot_descriptions):
@@ -73,18 +76,15 @@ def main():
 
     initialize_plots([plot_1_config,plot_2_config])
 
-    #  Get the reply.
-    message = socket.recv()
-    print("Received reply %s [ %s ]" % (0, message))
+    wait_for_response()
 
     for request in range(10):
 
         print("Sending request %s" % request)
-        send_array(socket, np.random.randn(total_plots,10))
+        send_array(np.random.randn(total_plots,10))
 
         #  Get the reply.
-        message = socket.recv()
-        print("Received reply %s [ %s ]" % (request, message))
+        wait_for_response()
 
 
 if __name__ == '__main__':
