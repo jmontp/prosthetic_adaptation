@@ -165,3 +165,11 @@ client.send_array(data)
 #to satisfy tcp flow
 client.wait_for_response()
  ```
+
+
+
+ #Examples
+
+![alt text](./.figures/example1.png "Example 1")
+
+![alt text](./.figures/example2.png "Example 2")
