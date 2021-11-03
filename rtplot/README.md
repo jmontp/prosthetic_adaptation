@@ -2,7 +2,7 @@
 
 # Real Time Plotting with pyqtgraph and zmq
 
-The point of this module is to be able to plot remotely over socket protocols (currently tcp). This is very useful for setting up real time plots given pyqtgraph's performance. 
+The point of this module is to be able to plot remotely over socket protocols (currently tcp). The use cases that we have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. 
 
 The neat feature is that the client has full control over the plot by first sending over a configuration file and then sending data. 
 
@@ -165,3 +165,11 @@ client.send_array(data)
 #to satisfy tcp flow
 client.wait_for_response()
  ```
+
+
+
+ #Examples
+
+![alt text](./.figures/example1.png "Example 1")
+
+![alt text](./.figures/example2.png "Example 2")
