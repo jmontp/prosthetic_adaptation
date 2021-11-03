@@ -172,8 +172,8 @@ client.wait_for_response()
 
 
 
- #Examples
+# Examples
 
-![alt text](./.figures/example1.png "Example 1")
+![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example2.png "Example 1")
 
-![alt text](./.figures/example2.png "Example 2")
+![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example1.png "Example 2")
