@@ -9,3 +9,4 @@ utils/__pycache__/
 model_fitting/*.pickle
 *.svg
 *.png
+*.egg-info
