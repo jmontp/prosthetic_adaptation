@@ -178,3 +178,10 @@ client.wait_for_response()
 ![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example2.png "Example 1")
 
 ![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example1.png "Example 2")
+
+
+
+# Todo
+
+* Create helper scripts so that you can setup the ip address from the client.
+* Find a way to ask the user for the ip address on the server
