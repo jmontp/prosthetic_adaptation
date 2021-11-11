@@ -1,0 +1,14 @@
+rtplot performance
+
+
+With pi very close
+
+1,000 samples with 100 data points across 8 traces
+0.01633517910500086 (s)
+
+1,000 samples with 1 data points across 8 traces
+0.013284970828999576 (s)
+
+1,000 samples with 1 data points across 8 traces
+0.010210787866000829 (s)
+

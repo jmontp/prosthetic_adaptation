@@ -8,12 +8,13 @@ import pyqtgraph as pg
 #Common imports 
 import numpy as np 
 import json
-
+from time import perf_counter
 
 #Create connection layer
 context = zmq.Context()
-socket = context.socket(zmq.REP)
-socket.bind("tcp://*:5555")
+socket = context.socket(zmq.SUB)
+socket.connect("tcp://127.0.0.1:5555")
+socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
 
 ### START QtApp #####
@@ -31,7 +32,7 @@ def initialize_plot(json_config):
     pg.setConfigOption('background', 'w')
     pg.setConfigOption('foreground', 'k')
 
-    win = pg.GraphicsWindow(title="Random Number Generator") # creates a window
+    win = pg.GraphicsLayoutWidget(title="Random Number Generator", show=True) # creates a window
    
     
     #Array of number per plot and array of pointer to plots
@@ -39,8 +40,9 @@ def initialize_plot(json_config):
     subplots = []
 
     num_plots = 0
-
-    for plot_description in json_config.values():
+    top_plot = None
+    top_plot_title = ""
+    for plot_num, plot_description in enumerate(json_config.values()):
         
         #Add a plot
         num_plots += 1
@@ -55,6 +57,14 @@ def initialize_plot(json_config):
 
         #Initialize the new plot
         new_plot = win.addPlot()
+        
+        #Potential performance boost
+        new_plot.setYRange(-10,10)
+        new_plot.setXRange(0,WINDOW_WIDTH)
+
+        if top_plot == None:
+            top_plot = new_plot
+
         win.nextRow()
 
         #Add the names of the plots to the legend
@@ -70,6 +80,9 @@ def initialize_plot(json_config):
         #Add title
         if 'title' in plot_description:
             new_plot.setTitle(plot_description['title'])
+            
+            if plot_num == 0:
+                top_plot_title = plot_description['title']
 
 
         #Define default Style
@@ -84,10 +97,12 @@ def initialize_plot(json_config):
         for i in range(num_traces):
             #Add the plot object
             pen = pg.mkPen(color = colors[i], style=line_style[i])
-            subplots.append(new_plot.plot(name=trace_names[i], pen=pen))
+            new_curve = pg.PlotCurveItem(name=trace_names[i], pen=pen)
+            new_plot.addItem(new_curve)
+            subplots.append(new_curve)
 
     print("Initialized Plot!")
-    return subplot_per_plot, subplots, num_plots, win
+    return subplot_per_plot, subplots, num_plots, win, top_plot, top_plot_title
 
 
 #Receive a numpy array
@@ -110,16 +125,25 @@ try:
             flags = 0 
             rec_json = socket.recv_json(flags=flags)
             plot_configuration = json.loads(rec_json)
-            subplot_per_plot, subplots, num_plots, win = initialize_plot(plot_configuration)
+            subplot_per_plot, subplots, num_plots, win, top_plot, top_plot_title = initialize_plot(plot_configuration)
             Xm = np.zeros((sum(subplot_per_plot),WINDOW_WIDTH))    
 
             #Everything is initialized
             initialized_plot = True
 
+            #Set counter index for debugging
+            counter = 0
 
+            #Define fps variable
+            fps = None
+
+            #Get last time to estimate fps
+            lastTime = perf_counter()
+
+           
         #Read some data and plot it
         else:
-            print("Waiting for data...")
+
             #Read in numpy array
             receive_np_array = recv_array(socket)
             #Get how many new values are in it
@@ -128,41 +152,42 @@ try:
             #Remember how much you need to offset per plot
             subplot_offset = 0
 
+            #Estimate fps
+            now = perf_counter()
+            dt = now - lastTime
+            lastTime = now
+
+            #Calculate the fps
+            if fps is None:
+                fps = 1.0/dt
+            else:
+                s = np.clip(dt*3., 0, 1)
+                fps = fps * (1-s) + (1.0/dt) * s
+
             #Plot for every subplot
             for plot_index in range(num_plots):
-
+                
                 for subplot_index in range(subplot_per_plot[plot_index]):
                     i = subplot_offset + subplot_index
                     Xm[i,:-num_values] = Xm[i,num_values:]    # shift data in the temporal mean 1 sample left
-                    Xm[i,-num_values:] = receive_np_array[i,:]              # vector containing the instantaneous values      
+                    Xm[i,-num_values:] = receive_np_array[i,:]              # vector containing the instantaneous values  
                     subplots[i].setData(Xm[i,:])
                 
                 #Update before the next loop
                 subplot_offset += subplot_per_plot[plot_index]
 
+            #Update fps in title
+            top_plot.setTitle(top_plot_title + f" - FPS:{fps:.0f}")
+
             #Indicate you MUST process the plot now
             QtGui.QApplication.processEvents()    
 
-
-            #Print received message shape
-            print(f"Received request: {receive_np_array.shape}")
-
-
-
-        #Whenever you get a message, reply something to make tcp happy
-        socket.send(b"World")
-
+          
 
 except KeyboardInterrupt:
     print("You can move around the plot now")
-    pass
-
-
-## Start Qt event loop unless running in interactive mode or using pyside.
-if __name__ == '__main__':
-    import sys
-    if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
-        QtGui.QApplication.instance().exec_()
+    #Need to run this for 
+    QtGui.QApplication.instance().exec_()
 
 
 
