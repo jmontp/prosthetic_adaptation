@@ -26,14 +26,14 @@ app = QtGui.QApplication([])
 WINDOW_WIDTH = 200                      
 
 #Create the plot from the json file that is passed in
-def initialize_plot(json_config):
+def initialize_plot(json_config, win=None):
     
     #Set background white
     pg.setConfigOption('background', 'w')
     pg.setConfigOption('foreground', 'k')
 
-    win = pg.GraphicsLayoutWidget(title="Random Number Generator", show=True) # creates a window
-   
+    #Define the window
+    win = pg.GraphicsLayoutWidget(title="Real Time Plotter", show=True) # creates a window
     
     #Array of number per plot and array of pointer to plots
     subplot_per_plot = []
@@ -47,6 +47,7 @@ def initialize_plot(json_config):
         #Add a plot
         num_plots += 1
 
+        #Get the trace names for this plot
         trace_names = plot_description['names']
 
         #Count how many traces we want
@@ -58,14 +59,12 @@ def initialize_plot(json_config):
         #Initialize the new plot
         new_plot = win.addPlot()
         
-        #Potential performance boost
-        new_plot.setYRange(-10,10)
-        new_plot.setXRange(0,WINDOW_WIDTH)
+        #Move to the next row
+        win.nextRow()
 
+        #Capture the first plot
         if top_plot == None:
             top_plot = new_plot
-
-        win.nextRow()
 
         #Add the names of the plots to the legend
         new_plot.addLegend()
@@ -76,6 +75,15 @@ def initialize_plot(json_config):
 
         if 'ylabel' in plot_description:
             new_plot.setLabel('left', plot_description['ylabel'])
+
+
+        #Potential performance boost
+        new_plot.setXRange(0,WINDOW_WIDTH)
+
+        #Get the y range
+        if 'yrange' in plot_description:
+            new_plot.setYRange(*plot_description['yrange'])
+
 
         #Add title
         if 'title' in plot_description:
@@ -115,24 +123,36 @@ def recv_array(socket, flags=0, copy=True, track=False):
     return A.reshape(md['shape'])
 
 
+#Create definitions 
+RECEIVED_PLOT_UPDATE = 0
+RECEIVED_DATA = 1
+
+#Define function to detect category
+def rec_type():
+    return int(socket.recv_string())
 
 
 try:
-    initialized_plot = False
     while True:
+
+        #Receive the type of information
+        category = rec_type()
+
         #Do not continue unless you have initialized the plot
-        if(not initialized_plot):
+        if(category == RECEIVED_PLOT_UPDATE):
+            
+            #Receive plot configuration
             flags = 0 
-            rec_json = socket.recv_json(flags=flags)
-            plot_configuration = json.loads(rec_json)
+            plot_configuration = socket.recv_json(flags=flags)
+
+            #Initialize plot
             subplot_per_plot, subplots, num_plots, win, top_plot, top_plot_title = initialize_plot(plot_configuration)
+            
+            #Initialize data buffer
             Xm = np.zeros((sum(subplot_per_plot),WINDOW_WIDTH))    
 
             #Everything is initialized
             initialized_plot = True
-
-            #Set counter index for debugging
-            counter = 0
 
             #Define fps variable
             fps = None
@@ -142,7 +162,7 @@ try:
 
            
         #Read some data and plot it
-        else:
+        elif (category == RECEIVED_DATA):
 
             #Read in numpy array
             receive_np_array = recv_array(socket)
