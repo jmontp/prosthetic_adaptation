@@ -1,15 +1,16 @@
 ![Logo of the project](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/signature-stationery.png)
 
-# Real Time Plotting with pyqtgraph and zmq
+# Real Time Plotting with pyqtgraph and ZMQ
 
-The point of this module is to be able to plot remotely over socket protocols (currently tcp). The use cases that we have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. 
+The point of this module is to be able to plot remotely over socket protocols using the [ZMQ library] (https://zeromq.org/). The use cases that I have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. This can also be used to plot local information in real time by using the localhost as the address to publish/subscribe data from. 
 
-The neat feature is that the client has full control over the plot by first sending over a configuration file and then sending data. 
-
+The main highlight in this plotter are the following:
+* **Fast Performance**. Can do 500+ fps on one trace using an i7-9750H processor
+* **Remote Plot Customizeability**. The plot configuration is defined by the provider of the data. E.g. you only have to change code in one location 
 
 # How to use
 
-The first step to plot is to execute the server.py file in the computer that you want to plot. This will wait for a configuration from the client and then plot the subsequent data that is sent over as numpy arrays. 
+The first step to plot is to execute the server.py file in the computer that you want to plot. This will wait for a configuration from the publisher and then plot the subsequent data that is sent over as numpy arrays. If a new plot configuration is sent, the plot will automatically update the plot and keep plotting data in the new format. 
 
 
 In order to use this library, you must import the rtplot.client module into your code. The first step is to define the configuration. There are two ways of doing this
@@ -54,6 +55,8 @@ Additional elements of the plot can be configured from the client side. To do th
 * 'title' - Sets the title to the plot
 * 'ylabel' - Sets the y label of the plot
 * 'xlabel' - Sets the x label of the plot
+* 'yrange' - Sets the range of values of y. This provides a performance boost to the plotter
+   * Expects values as a iterable in the order [min, max]. Example: [-2,2]
 
 
 You only need to specify the things that you want, if the dictionary element is left out then the default value is used. Some example code of how to use this is as follows (it can also be executed by running client.py)
@@ -183,5 +186,6 @@ client.wait_for_response()
 
 # Todo
 
-* Create helper scripts so that you can setup the ip address from the client.
-* Find a way to ask the user for the ip address on the server
+* Rename 'server' and 'client' to 'subscriber' and 'publisher' to better indicate the communication pattern. 
+* Create command line arguments for server to pass in ip of publisher so people don't need to modify file directly.
+* Have the plot persist when creating a new format (minor quality of life). 
