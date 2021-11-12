@@ -173,6 +173,10 @@ client.send_array(data)
 #to satisfy tcp flow
 client.wait_for_response()
  ```
+ 
+# A note on performance
+
+To get the most performance out of the system, you want to set the 'yrange' configuration of the plot. This has resulted in a 100FPS increase for my testing. 
 
 
 
@@ -189,3 +193,5 @@ client.wait_for_response()
 * Rename 'server' and 'client' to 'subscriber' and 'publisher' to better indicate the communication pattern. 
 * Create command line arguments for server to pass in ip of publisher so people don't need to modify file directly.
 * Have the plot persist when creating a new format (minor quality of life). 
+* Make the x-axis represent time
+* Have a way to store entire datasets directly from the plotter (e.g. button of some sort)
