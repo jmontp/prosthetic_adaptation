@@ -8,24 +8,28 @@ import zmq
 import numpy as np
 import json 
 import time
+from collections import OrderedDict
 
 
 context = zmq.Context()
 
 #Socket to talk to server
-socket = context.socket(zmq.PUB)
+# socket = context.socket(zmq.PUB)
+socket = context.socket(zmq.PUSH)
 
 #Neurobionics Pi Address
-#socket.connect("udp://10.0.0.24:5555")
+# socket.connect("udp://10.0.0.2:5555")
 
 #Local testing address
-socket.bind("tcp://127.0.0.1:5555")
+# socket.bind("tcp://127.0.0.1:5555")
+socket.connect("tcp://127.0.0.1:5555")
 #Sleep so that subscribers can join
 time.sleep(0.2)
 
 #Create definitions for categories
 SENDING_PLOT_UPDATE = "0"
 SENDING_DATA = "1"
+
 
 def send_array(A, flags=0, copy=True, track=False):
     """send a numpy array with metadata
@@ -57,11 +61,15 @@ def initialize_plots(plot_descriptions):
 
     #Process list of names
     if type(plot_descriptions[0]) == list:
-        plot_desc_dict = {f"plot{i}":{"names":desc} for i,desc in enumerate(plot_descriptions)}
+        plot_desc_dict = OrderedDict()
+        for i,plot_desc in enumerate(plot_descriptions):
+            plot_desc_dict["plot{}".format(i)] = {"names":plot_desc}
     
     #Process list of dics
     elif type(plot_descriptions[0]) == dict:
-        plot_desc_dict = {f"plot{i}":desc for i,desc in enumerate(plot_descriptions)}
+        plot_desc_dict = OrderedDict()
+        for i,plot_desc in enumerate(plot_descriptions):
+            plot_desc_dict["plot{}".format(i)] = plot_desc
     
     #Throw error
     else:
@@ -88,14 +96,16 @@ def main():
                     'title': "Phase, Phase Dot, Stride Length",
                     'ylabel': "reading (unitless)",
                     'xlabel': 'test 1',
-                    'yrange': [-2,2]}
+                    'yrange': [-2,2], 
+                    'line_width': [5,5,5]}
 
-    plot_2_config = {'names': [f"gf{i+1}" for i in range(24)],
+    plot_2_config = {'names': [f"gf{i+1}" for i in range(4)],
                     'colors' : ['b' for i in range(24)],
                     'line_style' : ['-','','-','','-']*24,
                     'title': "Phase, Phase Dot, Stride Length",
                     'ylabel': "reading (unitless)",
                     'xlabel': 'test 2',
+                    'line_width':[5]*24,
                     'yrange': [-2,2]}
 
     total_plots = len(plot_1_config['names']) + len(plot_2_config['names'])
@@ -106,11 +116,11 @@ def main():
     print("Sent Plot format")
     time.sleep(1)
 
-    for request in range(2000):
+    for request in range(10000):
 
         print("Sending request %s" % request)
         
-        send_array(np.random.randn(total_plots,20))
+        send_array(np.sin(50*np.arange(total_plots)*time.time()).reshape(-1,1))
 
 
 

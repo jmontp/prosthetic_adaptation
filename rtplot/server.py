@@ -9,12 +9,17 @@ import pyqtgraph as pg
 import numpy as np 
 import json
 from time import perf_counter
+from collections import OrderedDict
+
 
 #Create connection layer
 context = zmq.Context()
-socket = context.socket(zmq.SUB)
-socket.connect("tcp://127.0.0.1:5555")
-socket.setsockopt_string(zmq.SUBSCRIBE, "")
+# socket = context.socket(zmq.SUB)
+socket = context.socket(zmq.PULL)
+socket.bind("tcp://*:5555")
+#socket.connect("tcp://127.0.0.1:5555")
+#socket.connect("tcp://10.0.0.200:5555")
+# socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
 
 ### START QtApp #####
@@ -25,15 +30,35 @@ app = QtGui.QApplication([])
 # width of the window displaying the curve
 WINDOW_WIDTH = 200                      
 
+# window title
+WINDOW_TITLE = "Real Time Plotter"
+
+
+ROW = True
+
+#win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=True)
+
 #Create the plot from the json file that is passed in
-def initialize_plot(json_config, win=None):
+def initialize_plot(json_config):
     
     #Set background white
     pg.setConfigOption('background', 'w')
     pg.setConfigOption('foreground', 'k')
 
     #Define the window
-    win = pg.GraphicsLayoutWidget(title="Real Time Plotter", show=True) # creates a window
+    win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=True) # creates a window
+    # if ROW == True:
+    #     item = 1
+    #     counter = 0
+    #     while item is not None:
+    #         item = win.getItem(counter,0)
+    #         win.removeItem(item)
+    # else:
+    #     item = 1
+    #     counter = 0
+    #     while item is not None:
+    #         item = win.getItem(0,counter)
+    #         win.removeItem(item)
     
     #Array of number per plot and array of pointer to plots
     subplot_per_plot = []
@@ -60,7 +85,10 @@ def initialize_plot(json_config, win=None):
         new_plot = win.addPlot()
         
         #Move to the next row
-        win.nextRow()
+        if ROW == True:
+            win.nextRow()
+        else:
+            win.nextCol()
 
         #Capture the first plot
         if top_plot == None:
@@ -69,13 +97,13 @@ def initialize_plot(json_config, win=None):
         #Add the names of the plots to the legend
         new_plot.addLegend()
 
+        axis_label_style = {'font-size':'20pt'}
         #Add the axis info
         if 'xlabel' in plot_description:
-            new_plot.setLabel('bottom', plot_description['xlabel'])
+            new_plot.setLabel('bottom', plot_description['xlabel'],**axis_label_style)
 
         if 'ylabel' in plot_description:
-            new_plot.setLabel('left', plot_description['ylabel'])
-
+            new_plot.setLabel('left', plot_description['ylabel'],**axis_label_style)
 
         #Potential performance boost
         new_plot.setXRange(0,WINDOW_WIDTH)
@@ -83,28 +111,41 @@ def initialize_plot(json_config, win=None):
         #Get the y range
         if 'yrange' in plot_description:
             new_plot.setYRange(*plot_description['yrange'])
+        
+        #Set axis tick mark size
+        font=QtGui.QFont()
+        font.setPixelSize(50)
+        new_plot.getAxis("left").tickFont = font
 
+        font=QtGui.QFont()
+        font.setPixelSize(50)
+        new_plot.getAxis("bottom").tickFont = font
 
         #Add title
+        title_style = {'size':'25pt'}
         if 'title' in plot_description:
-            new_plot.setTitle(plot_description['title'])
+            new_plot.setTitle(plot_description['title'],**title_style)
             
             if plot_num == 0:
                 top_plot_title = plot_description['title']
-
 
         #Define default Style
         colors = ['r','g','b','c','m','y']
         if 'colors' in plot_description:
             colors = plot_description['colors']
 
-        line_style = [QtCore.Qt.SolidLine] * 10
+        line_style = [QtCore.Qt.SolidLine] * num_traces
         if 'line_style' in plot_description:
             line_style = [QtCore.Qt.DashLine if desc == '-' else QtCore.Qt.SolidLine for desc in plot_description['line_style']]
 
+        line_width = [1] * num_traces
+        if 'line_width' in plot_description:
+            line_width = plot_description['line_width']
+
+
         for i in range(num_traces):
             #Add the plot object
-            pen = pg.mkPen(color = colors[i], style=line_style[i])
+            pen = pg.mkPen(color = colors[i], style=line_style[i], width=line_width[i])
             new_curve = pg.PlotCurveItem(name=trace_names[i], pen=pen)
             new_plot.addItem(new_curve)
             subplots.append(new_curve)
@@ -129,12 +170,17 @@ RECEIVED_DATA = 1
 
 #Define function to detect category
 def rec_type():
-    return int(socket.recv_string())
-
+    #Sometimes we get miss-aligned data
+    #In this case just ignore the data and wait until you have a valid type
+    while True:
+        try:
+            return int(socket.recv_string())
+        except ValueError:
+            print("Had a value error")
+            pass
 
 try:
     while True:
-
         #Receive the type of information
         category = rec_type()
 
@@ -198,17 +244,19 @@ try:
 
             #Update fps in title
             top_plot.setTitle(top_plot_title + f" - FPS:{fps:.0f}")
-
             #Indicate you MUST process the plot now
             QtGui.QApplication.processEvents()    
 
           
 
 except KeyboardInterrupt:
-    print("You can move around the plot now")
-    #Need to run this for 
-    QtGui.QApplication.instance().exec_()
 
+    try: 
+        win
+        print("You can move around the plot now")
+        QtGui.QApplication.instance().exec_()
+    except:
+       print("\nNo plot - killing server")
 
 
 #References
