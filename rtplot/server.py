@@ -16,10 +16,9 @@ from time import perf_counter
 import argparse
 
 
-
+###################
+# ZMQ Networking #
 ##################
-# ZMQ Networking
-#################
 
 # Create connection layer
 context = zmq.Context()
@@ -29,32 +28,56 @@ socket = context.socket(zmq.PULL)
 socket.bind("tcp://*:5555")
 
 
+############################
+# PyQTgraph Configuration #
 ###########################
-# PyQTgraph Configuration
-##########################
 
 
 ### START QtApp #####
-# you MUST do this once (initialize things)
+# You MUST do this once (initialize things)
 app = QtGui.QApplication([])            
 
-# width of the window displaying the curve
+# Width of the window displaying the curve
 WINDOW_WIDTH = 200                      
 
-# window title
+# Window title
 WINDOW_TITLE = "Real Time Plotter"
 
 # Define if a new subplot is placed in a 
 # new row or columns
 NEW_SUBPLOT_IN_ROW = True
 
-#Set background white
+# Set background white
 pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 
 # Define the window object for the plot
 win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=True)
 
+# Create command line arguments
+parser = argparse.ArgumentParser()
+
+#Add argument to enable bigger fonts
+parser.add_argument("--bigscreen", help="Increase fonts to print in the big screen",
+                    action="store_true")
+args = parser.parse_args()
+
+
+# If big screen mode is on, set font sizes big
+if args.bigscreen:
+    axis_label_style = {'font-size':'20pt'}
+    title_style = {'size':'25pt'}
+    #Accepts parameters into LegendItem constructor
+    legend_style = {'labelTextSize':'14pt'}
+    tick_size = 25
+    
+
+# Else set to normal size
+else:
+    axis_label_style = {'font-size':'10pt'}
+    title_style = {'size':'14pt'}
+    legend_style = {'labelTextSize':'8pt'}
+    tick_size = 12
 
 # Create the plot from the json file that is passed in
 def initialize_plot(json_config, subplots_to_remove=None):
@@ -119,9 +142,8 @@ def initialize_plot(json_config, subplots_to_remove=None):
             top_plot = new_plot
 
         # Add the names of the plots to the legend
-        new_plot.addLegend()
+        new_plot.addLegend(**legend_style)
 
-        axis_label_style = {'font-size':'20pt'}
         # Add the axis info
         if 'xlabel' in plot_description:
             new_plot.setLabel('bottom', plot_description['xlabel'],**axis_label_style)
@@ -138,20 +160,28 @@ def initialize_plot(json_config, subplots_to_remove=None):
         
         # Set axis tick mark size
         font=QtGui.QFont()
-        font.setPixelSize(50)
-        new_plot.getAxis("left").tickFont = font
+        font.setPixelSize(tick_size)
+        # New_plot.getAxis("left").tickFont = font
+        new_plot.getAxis("bottom").setStyle(tickFont = font)
 
         font=QtGui.QFont()
-        font.setPixelSize(50)
-        new_plot.getAxis("bottom").tickFont = font
+        font.setPixelSize(tick_size)
+        # New_plot.getAxis("bottom").tickFont = font
+        new_plot.getAxis("bottom").setStyle(tickFont = font)
+
 
         # Add title
-        title_style = {'size':'25pt'}
         if 'title' in plot_description:
             new_plot.setTitle(plot_description['title'],**title_style)
             
             if plot_num == 0:
                 top_plot_title = plot_description['title']
+        
+        # If zeroth-plot does not have tittle, add something in blank
+        # so fps counter gets style
+        elif plot_num == 0:
+            new_plot.setTitle("",**title_style)
+
 
         # Define default Style
         colors = ['r','g','b','c','m','y']
@@ -183,7 +213,7 @@ def initialize_plot(json_config, subplots_to_remove=None):
     return traces_per_plot, subplots_traces, subplots, top_plot, top_plot_title
 
 
-#Receive a numpy array
+# Receive a numpy array
 def recv_array(socket, flags=0, copy=True, track=False):
     """recv a numpy array"""
     md = socket.recv_json(flags=flags)
@@ -193,14 +223,14 @@ def recv_array(socket, flags=0, copy=True, track=False):
     return A.reshape(md['shape'])
 
 
-#Create definitions 
+# Create definitions 
 RECEIVED_PLOT_UPDATE = 0
 RECEIVED_DATA = 1
 
-#Define function to detect category
+# Define function to detect category
 def rec_type():
-    #Sometimes we get miss-aligned data
-    #In this case just ignore the data and wait until you have a valid type
+    # Sometimes we get miss-aligned data
+    # In this case just ignore the data and wait until you have a valid type
     while True:
         try:
             return int(socket.recv_string())
@@ -213,59 +243,59 @@ def rec_type():
 # Main code section #
 #####################
 
+# Run until you get a keyboard interrupt
 try:
+    # Initialize variables
 
-    #Initialize variables
-
-    #Initialize plots expected the old plots to delete them
+    # Initialize plots expected the old plots to delete them
     # since we have no plots, initialize to None
     subplots = None
 
-    #Main code loop
+    # Main code loop
     while True:
-        #Receive the type of information
+        # Receive the type of information
         category = rec_type()
 
-        #Do not continue unless you have initialized the plot
+        # Do not continue unless you have initialized the plot
         if(category == RECEIVED_PLOT_UPDATE):
             
-            #Receive plot configuration
+            # Receive plot configuration
             flags = 0 
             plot_configuration = socket.recv_json(flags=flags)
 
-            #Initialize plot
+            # Initialize plot
             traces_per_plot, subplots_traces, subplots,\
             top_plot, top_plot_title \
                     = initialize_plot(plot_configuration, subplots)
             
-            #Get the number of plots
+            # Get the number of plots
             num_plots = len(subplots)
 
-            #Initialize data buffer
+            # Initialize data buffer
             Xm = np.zeros((sum(traces_per_plot),WINDOW_WIDTH))    
 
-            #Everything is initialized
+            # Everything is initialized
             initialized_plot = True
 
-            #Define fps variable
+            # Define fps variable
             fps = None
 
-            #Get last time to estimate fps
+            # Get last time to estimate fps
             lastTime = perf_counter()
 
            
-        #Read some data and plot it
+        # Read some data and plot it
         elif (category == RECEIVED_DATA):
 
-            #Read in numpy array
+            # Read in numpy array
             receive_np_array = recv_array(socket)
-            #Get how many new values are in it
+            # Get how many new values are in it
             num_values = receive_np_array.shape[1]    
 
-            #Remember how much you need to offset per plot
+            # Remember how much you need to offset per plot
             subplot_offset = 0
 
-            #Estimate fps
+            # Estimate fps
             now = perf_counter()
             dt = now - lastTime
             lastTime = now
@@ -279,22 +309,22 @@ try:
             #Update every subplot
             for plot_index in range(num_plots):
                 
-                #Update every trace
+                # Update every trace
                 for subplot_index in range(traces_per_plot[plot_index]):
-                    #Get index to plot
+                    # Get index to plot
                     i = subplot_offset + subplot_index
-                    #Update the rolling buffer with new values
+                    # Update the rolling buffer with new values
                     Xm[i,:-num_values] = Xm[i,num_values:]    
                     Xm[i,-num_values:] = receive_np_array[i,:]
-                    #Set the data in the trace              
+                    # Set the data in the trace              
                     subplots_traces[i].setData(Xm[i,:])
                 
-                #Update offset to account for the past loop's traces
+                # Update offset to account for the past loop's traces
                 subplot_offset += traces_per_plot[plot_index]
 
-            #Update fps in title
+            # Update fps in title
             top_plot.setTitle(top_plot_title + f" - FPS:{fps:.0f}")
-            #Indicate you MUST process the plot now
+            # Indicate you MUST process the plot now
             QtGui.QApplication.processEvents()    
 
           
