@@ -173,6 +173,12 @@ client.send_array(data)
 #to satisfy tcp flow
 client.wait_for_response()
  ```
+ 
+# A note on performance
+
+The performance of the plotter is mostly impacted by the amount of traces that you want to plot (this is due to multiple calls to the line drawing algorithms in pyqtgraph). However, sending over multiple datapoints to plot at once is not expensive since there is essentially only the added overhead of receiving the data (the plotter redraws the entire line anyways). Therefore to get the most performance you should have as little traces as possible and send over as much datapoints at once before the plot updates look ugly.
+
+To get the most performance out of the system, you want to set the 'yrange' configuration of the plot. This has resulted in a 100FPS increase for my testing. 
 
 
 
@@ -182,10 +188,15 @@ client.wait_for_response()
 
 ![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example1.png "Example 2")
 
+simulate_ekf.py contains example code. Look for calls to client. 
 
 
 # Todo
 
 * Rename 'server' and 'client' to 'subscriber' and 'publisher' to better indicate the communication pattern. 
 * Create command line arguments for server to pass in ip of publisher so people don't need to modify file directly.
+* Create command line arguments for changing the window width. 
 * Have the plot persist when creating a new format (minor quality of life). 
+* Make the x-axis represent time.
+* Have a way to store entire datasets directly from the plotter (e.g. button of some sort).
+* Add performance vs trace and array size surface.
