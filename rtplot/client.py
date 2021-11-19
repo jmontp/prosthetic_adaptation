@@ -11,31 +11,51 @@ import time
 from collections import OrderedDict
 
 
+
+
+###################
+# ZMQ Networking #
+##################
+
+#Get the context for networking
 context = zmq.Context()
 
 #Socket to talk to server
-# socket = context.socket(zmq.PUB)
-socket = context.socket(zmq.PUSH)
-
-#Neurobionics Pi Address
-# socket.connect("udp://10.0.0.2:5555")
+#Using the push - pull paradigm
+socket = context.socket(zmq.PUB)
 
 #Local testing address
-# socket.bind("tcp://127.0.0.1:5555")
 socket.connect("tcp://127.0.0.1:5555")
-#Sleep so that subscribers can join
+
+#Sleep so that the subscriber can join
 time.sleep(0.2)
+
+
+
+############################
+# PyQTgraph Configuration #
+###########################
 
 #Create definitions for categories
 SENDING_PLOT_UPDATE = "0"
 SENDING_DATA = "1"
 
 
+def configure_ip(ip):
+    """Connect to a server at a specific IP address"""
+
+    socket.connect("tcp://{}".format(ip))
+
+
 def send_array(A, flags=0, copy=True, track=False):
     """send a numpy array with metadata
     Inputs
     ------
-    A: np array to transmit
+    A: (subplots,dim) np array to transmit
+        subplots - the amount of subplots that are 
+                   defined in the current plot
+        dim - the amount of data that you want to plot.
+              This is not fixed 
     """
     #Create dict to reconstruct array
     md = dict(
@@ -52,28 +72,41 @@ def send_array(A, flags=0, copy=True, track=False):
     return socket.send(A, flags, copy=copy, track=track)
 
 
-def initialize_plots(plot_descriptions):
+def initialize_plots(plot_descriptions=1):
     """Send a json description of desired plot
     Inputs
     ------
-    plot_description: list of names or list of plot descriptions 
+    plot_description: list of names or list of plot descriptions dictionaries
     """
 
-    #Process list of names
-    if type(plot_descriptions[0]) == list:
+    #Process int inputs
+    if type(plot_descriptions) == int:
         plot_desc_dict = OrderedDict()
-        for i,plot_desc in enumerate(plot_descriptions):
-            plot_desc_dict["plot{}".format(i)] = {"names":plot_desc}
-    
-    #Process list of dics
-    elif type(plot_descriptions[0]) == dict:
-        plot_desc_dict = OrderedDict()
-        for i,plot_desc in enumerate(plot_descriptions):
-            plot_desc_dict["plot{}".format(i)] = plot_desc
+        plot_desc_dict["plot0"] = {"names":["Trace {}".format(i) for i in range (plot_descriptions)]}
+
+    #Process lists of things
+    elif(type(plot_descriptions) == list):
+
+        #Process list of strings
+        if type(plot_descriptions[0] == str):
+            plot_desc_dict = OrderedDict()
+            plot_desc_dict["plot0"] = {"names":plot_descriptions}
+
+        # Prcoess list with lists
+        if type(plot_descriptions[0]) == list:
+            plot_desc_dict = OrderedDict()
+            for i,plot_desc in enumerate(plot_descriptions):
+                plot_desc_dict["plot{}".format(i)] = {"names":plot_desc}
+        
+        #Process list of dics
+        elif type(plot_descriptions[0]) == dict:
+            plot_desc_dict = OrderedDict()
+            for i,plot_desc in enumerate(plot_descriptions):
+                plot_desc_dict["plot{}".format(i)] = plot_desc
     
     #Throw error
     else:
-        raise TypeError("Only List of List and Dict are supported")
+        raise TypeError("Only ints, list of strings, list of List and dict are supported")
     
     #Send the category
     socket.send_string(SENDING_PLOT_UPDATE)
@@ -82,7 +115,7 @@ def initialize_plots(plot_descriptions):
     socket.send_json(plot_desc_dict)
 
 
-
+#This is used as a unit test case
 def main():
 
     #  Do 10 requests, waiting each time for a response
@@ -116,7 +149,7 @@ def main():
     print("Sent Plot format")
     time.sleep(1)
 
-    for request in range(10000):
+    for request in range(1000):
 
         print("Sending request %s" % request)
         

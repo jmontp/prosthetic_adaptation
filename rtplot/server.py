@@ -16,6 +16,37 @@ from time import perf_counter
 import argparse
 
 
+############################
+# Command Line Arguments #
+###########################
+
+# Create command line arguments
+parser = argparse.ArgumentParser()
+
+#Add argument to enable bigger fonts
+parser.add_argument("--bigscreen", help="Increase fonts to print in the big screen",
+                    action="store_true")
+args = parser.parse_args()
+
+
+# If big screen mode is on, set font sizes big
+if args.bigscreen:
+    axis_label_style = {'font-size':'20pt'}
+    title_style = {'size':'25pt'}
+    #Accepts parameters into LegendItem constructor
+    legend_style = {'labelTextSize':'14pt'}
+    tick_size = 25
+    
+
+# Else set to normal size
+else:
+    axis_label_style = {'font-size':'10pt'}
+    title_style = {'size':'14pt'}
+    legend_style = {'labelTextSize':'8pt'}
+    tick_size = 12
+
+
+
 ###################
 # ZMQ Networking #
 ##################
@@ -23,10 +54,10 @@ import argparse
 # Create connection layer
 context = zmq.Context()
 
-# Using the push - pull paradigm
-socket = context.socket(zmq.PULL)
+# Using the pub - sub paradigm
+socket = context.socket(zmq.SUB)
 socket.bind("tcp://*:5555")
-
+socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
 ############################
 # PyQTgraph Configuration #
@@ -54,30 +85,6 @@ pg.setConfigOption('foreground', 'k')
 # Define the window object for the plot
 win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=True)
 
-# Create command line arguments
-parser = argparse.ArgumentParser()
-
-#Add argument to enable bigger fonts
-parser.add_argument("--bigscreen", help="Increase fonts to print in the big screen",
-                    action="store_true")
-args = parser.parse_args()
-
-
-# If big screen mode is on, set font sizes big
-if args.bigscreen:
-    axis_label_style = {'font-size':'20pt'}
-    title_style = {'size':'25pt'}
-    #Accepts parameters into LegendItem constructor
-    legend_style = {'labelTextSize':'14pt'}
-    tick_size = 25
-    
-
-# Else set to normal size
-else:
-    axis_label_style = {'font-size':'10pt'}
-    title_style = {'size':'14pt'}
-    legend_style = {'labelTextSize':'8pt'}
-    tick_size = 12
 
 # Create the plot from the json file that is passed in
 def initialize_plot(json_config, subplots_to_remove=None):
@@ -223,7 +230,7 @@ def recv_array(socket, flags=0, copy=True, track=False):
     return A.reshape(md['shape'])
 
 
-# Create definitions 
+# Create definitions to define when you receive data or new plots
 RECEIVED_PLOT_UPDATE = 0
 RECEIVED_DATA = 1
 
@@ -232,10 +239,11 @@ def rec_type():
     # Sometimes we get miss-aligned data
     # In this case just ignore the data and wait until you have a valid type
     while True:
+        received = socket.recv_string()
         try:
-            return int(socket.recv_string())
+            return int(received)
         except ValueError:
-            print("Had a value error")
+            print(f"Had a value error. Expected int, received: {received}")
             pass
 
 
@@ -250,6 +258,10 @@ try:
     # Initialize plots expected the old plots to delete them
     # since we have no plots, initialize to None
     subplots = None
+    
+
+    # Make sure that you don't try to plot data without having a plot
+    initialized_plot = False
 
     # Main code loop
     while True:
@@ -274,7 +286,7 @@ try:
             # Initialize data buffer
             Xm = np.zeros((sum(traces_per_plot),WINDOW_WIDTH))    
 
-            # Everything is initialized
+            # You can now plot data
             initialized_plot = True
 
             # Define fps variable
@@ -285,7 +297,7 @@ try:
 
            
         # Read some data and plot it
-        elif (category == RECEIVED_DATA):
+        elif (category == RECEIVED_DATA) and (initialized_plot == True):
 
             # Read in numpy array
             receive_np_array = recv_array(socket)
