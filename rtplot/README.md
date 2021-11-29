@@ -6,7 +6,7 @@ The point of this module is to be able to plot remotely over socket protocols us
 
 The main highlight in this plotter are the following:
 * **Fast Performance**. Can do 500+ fps on one trace using an i7-9750H processor
-* **Remote Plot Customizeability**. The plot configuration is defined by the provider of the data. E.g. you only have to change code in one location 
+* **Remote Plot Customizability**. The plot configuration is defined by the provider of the data. E.g. you only have to change code in one location 
 
 # How to use
 
