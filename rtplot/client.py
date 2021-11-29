@@ -24,8 +24,11 @@ context = zmq.Context()
 #Using the push - pull paradigm
 socket = context.socket(zmq.PUB)
 
-#Local testing address
+#Local testing address 
 socket.connect("tcp://127.0.0.1:5555")
+
+#Pi address
+#socket.connect("tcp://10.0.0.200:5555")
 
 #Sleep so that the subscriber can join
 time.sleep(0.2)
@@ -83,6 +86,11 @@ def initialize_plots(plot_descriptions=1):
     if type(plot_descriptions) == int:
         plot_desc_dict = OrderedDict()
         plot_desc_dict["plot0"] = {"names":["Trace {}".format(i) for i in range (plot_descriptions)]}
+
+    #Process string inputs
+    elif type(plot_descriptions) == str:
+        plot_desc_dict = OrderedDict()
+        plot_desc_dict["plot0"] = {"names":[plot_descriptions]}
 
     #Process lists of things
     elif(type(plot_descriptions) == list):
