@@ -83,7 +83,28 @@ pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 
 # Define the window object for the plot
-win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=True)
+win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=False)
+
+
+#Create button callback method
+def save_button_clicked():
+    print("Pressed the button!")
+#Create button to save plots
+save_button = QtGui.QPushButton("Save Plot")
+#Attach Callback 
+save_button.clicked.connect(save_button_clicked)
+
+
+#Create the GUI
+window = QtGui.QWidget()
+hbox = QtGui.QVBoxLayout()  
+hbox.addWidget(win)
+hbox.addWidget(save_button)
+window.setLayout(hbox)
+window.show()
+
+#Close view when exiting
+app.aboutToQuit.connect(window.close)
 
 
 # Create the plot from the json file that is passed in
@@ -168,12 +189,10 @@ def initialize_plot(json_config, subplots_to_remove=None):
         # Set axis tick mark size
         font=QtGui.QFont()
         font.setPixelSize(tick_size)
-        # New_plot.getAxis("left").tickFont = font
-        new_plot.getAxis("bottom").setStyle(tickFont = font)
+        new_plot.getAxis("left").setStyle(tickFont = font)
 
         font=QtGui.QFont()
         font.setPixelSize(tick_size)
-        # New_plot.getAxis("bottom").tickFont = font
         new_plot.getAxis("bottom").setStyle(tickFont = font)
 
 
@@ -233,123 +252,119 @@ def recv_array(socket, flags=0, copy=True, track=False):
 # Create definitions to define when you receive data or new plots
 RECEIVED_PLOT_UPDATE = 0
 RECEIVED_DATA = 1
+NOT_RECEIVED_DATA = 2
 
 # Define function to detect category
 def rec_type():
     # Sometimes we get miss-aligned data
     # In this case just ignore the data and wait until you have a valid type
     while True:
-        received = socket.recv_string()
         try:
+            received = socket.recv_string(flags=zmq.NOBLOCK)
+
             return int(received)
         except ValueError:
             print(f"Had a value error. Expected int, received: {received}")
-            pass
+        
+        except zmq.Again as e:
+            return NOT_RECEIVED_DATA
 
 
 #####################
 # Main code section #
 #####################
-
 # Run until you get a keyboard interrupt
-try:
-    # Initialize variables
+# Initialize variables
 
-    # Initialize plots expected the old plots to delete them
-    # since we have no plots, initialize to None
-    subplots = None
+# Initialize plots expected the old plots to delete them
+# since we have no plots, initialize to None
+subplots = None
+
+
+# Make sure that you don't try to plot data without having a plot
+initialized_plot = False
+
+# Main code loop
+while True:
+    # Receive the type of information
+    category = rec_type()
+
+    # Do not continue unless you have initialized the plot
+    if(category == RECEIVED_PLOT_UPDATE):
+        
+        # Receive plot configuration
+        flags = 0 
+        plot_configuration = socket.recv_json(flags=flags)
+
+        # Initialize plot
+        traces_per_plot, subplots_traces, subplots,\
+        top_plot, top_plot_title \
+                = initialize_plot(plot_configuration, subplots)
+        
+        # Get the number of plots
+        num_plots = len(subplots)
+
+        # Initialize data buffer
+        Xm = np.zeros((sum(traces_per_plot),WINDOW_WIDTH))    
+
+        # You can now plot data
+        initialized_plot = True
+
+        # Define fps variable
+        fps = None
+
+        # Get last time to estimate fps
+        lastTime = perf_counter()
+
     
+    # Read some data and plot it
+    elif (category == RECEIVED_DATA) and (initialized_plot == True):
 
-    # Make sure that you don't try to plot data without having a plot
-    initialized_plot = False
+        # Read in numpy array
+        receive_np_array = recv_array(socket)
+        # Get how many new values are in it
+        num_values = receive_np_array.shape[1]    
 
-    # Main code loop
-    while True:
-        # Receive the type of information
-        category = rec_type()
+        # Remember how much you need to offset per plot
+        subplot_offset = 0
 
-        # Do not continue unless you have initialized the plot
-        if(category == RECEIVED_PLOT_UPDATE):
+        # Estimate fps
+        now = perf_counter()
+        dt = now - lastTime
+        lastTime = now
+
+        if fps is None:
+            fps = 1.0/dt
+        else:
+            s = np.clip(dt*3., 0, 1)
+            fps = fps * (1-s) + (1.0/dt) * s
+
+        #Update every subplot
+        for plot_index in range(num_plots):
             
-            # Receive plot configuration
-            flags = 0 
-            plot_configuration = socket.recv_json(flags=flags)
-
-            # Initialize plot
-            traces_per_plot, subplots_traces, subplots,\
-            top_plot, top_plot_title \
-                    = initialize_plot(plot_configuration, subplots)
+            # Update every trace
+            for subplot_index in range(traces_per_plot[plot_index]):
+                # Get index to plot
+                i = subplot_offset + subplot_index
+                # Update the rolling buffer with new values
+                Xm[i,:-num_values] = Xm[i,num_values:]    
+                Xm[i,-num_values:] = receive_np_array[i,:]
+                # Set the data in the trace              
+                subplots_traces[i].setData(Xm[i,:])
             
-            # Get the number of plots
-            num_plots = len(subplots)
+            # Update offset to account for the past loop's traces
+            subplot_offset += traces_per_plot[plot_index]
 
-            # Initialize data buffer
-            Xm = np.zeros((sum(traces_per_plot),WINDOW_WIDTH))    
+        # Update fps in title
+        top_plot.setTitle(top_plot_title + f" - FPS:{fps:.0f}")
+        # Indicate you MUST process the plot now
+        QtGui.QApplication.processEvents()    
 
-            # You can now plot data
-            initialized_plot = True
-
-            # Define fps variable
-            fps = None
-
-            # Get last time to estimate fps
-            lastTime = perf_counter()
-
-           
-        # Read some data and plot it
-        elif (category == RECEIVED_DATA) and (initialized_plot == True):
-
-            # Read in numpy array
-            receive_np_array = recv_array(socket)
-            # Get how many new values are in it
-            num_values = receive_np_array.shape[1]    
-
-            # Remember how much you need to offset per plot
-            subplot_offset = 0
-
-            # Estimate fps
-            now = perf_counter()
-            dt = now - lastTime
-            lastTime = now
-
-            if fps is None:
-                fps = 1.0/dt
-            else:
-                s = np.clip(dt*3., 0, 1)
-                fps = fps * (1-s) + (1.0/dt) * s
-
-            #Update every subplot
-            for plot_index in range(num_plots):
-                
-                # Update every trace
-                for subplot_index in range(traces_per_plot[plot_index]):
-                    # Get index to plot
-                    i = subplot_offset + subplot_index
-                    # Update the rolling buffer with new values
-                    Xm[i,:-num_values] = Xm[i,num_values:]    
-                    Xm[i,-num_values:] = receive_np_array[i,:]
-                    # Set the data in the trace              
-                    subplots_traces[i].setData(Xm[i,:])
-                
-                # Update offset to account for the past loop's traces
-                subplot_offset += traces_per_plot[plot_index]
-
-            # Update fps in title
-            top_plot.setTitle(top_plot_title + f" - FPS:{fps:.0f}")
-            # Indicate you MUST process the plot now
-            QtGui.QApplication.processEvents()    
+    elif category == NOT_RECEIVED_DATA:
+        #Process events
+        QtGui.QApplication.processEvents()    
 
           
-
-except KeyboardInterrupt:
-
-    try: 
-        win
-        print("You can move around the plot now")
-        QtGui.QApplication.instance().exec_()
-    except:
-       print("\nNo plot - killing server")
-
 
 #References
 #ZMQ Example code
