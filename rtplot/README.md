@@ -2,7 +2,7 @@
 
 # Real Time Plotting with pyqtgraph and ZMQ
 
-The point of this module is to be able to plot remotely over socket protocols using the [ZMQ library] (https://zeromq.org/). The use cases that I have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. This can also be used to plot local information in real time by using the localhost as the address to publish/subscribe data from. 
+The point of this module is to be able to plot remotely over socket protocols using the [ZMQ library](https://zeromq.org/). The use cases that I have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. This can also be used to plot local information in real time by using the localhost as the address to publish/subscribe data from. 
 
 The main highlight in this plotter are the following:
 * **Fast Performance**. Can do 500+ fps on one trace using an i7-9750H processor
