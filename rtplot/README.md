@@ -151,8 +151,8 @@ plot_2_config = {'names': [f"gf{i+1}" for i in range(5)]}
 \begin{equation*}
     \text{data} = 
         \begin{bmatrix} 
-            phase_0 & \dots & phase_n \\
-            phase\_dot_0 & \dots & phase\_dot_n \\
+            phase_0 & \dots & phase_{n-1} \\
+            phase\_dot_0 & \dots & phase\_dot_{n-1} \\
             stride_0 & \dots & stride_{n-1}\\
             gf_{1_0} & \dots & gf_{1_{n-1}} \\
             gf_{2_0} & \dots & gf_{2_{n-1}} \\
