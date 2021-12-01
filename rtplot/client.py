@@ -60,6 +60,10 @@ def send_array(A, flags=0, copy=True, track=False):
         dim - the amount of data that you want to plot.
               This is not fixed 
     """
+    #If array is one dimensional, reshape to two dimensions
+    if(len(A.shape) ==1):
+        A = A.reshape(-1,1)
+
     #Create dict to reconstruct array
     md = dict(
         dtype = str(A.dtype),
