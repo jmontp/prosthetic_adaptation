@@ -15,7 +15,7 @@ from collections import OrderedDict
 # ZMQ Networking #
 ##################
 
-#Get the context for networking
+#Get the context for networking setup
 context = zmq.Context()
 
 #Socket to talk to server
@@ -23,9 +23,12 @@ context = zmq.Context()
 socket = context.socket(zmq.PUB)
 
 #Global variable to keep track of last connected address
+# default is fixed publisher mode, therefore you don't connect 
+# to an address
 prev_address = None
 
-#Define this address in case we want to bind the client later
+#This address will be used to bind any incoming address on port 5555
+# to the publisher
 bind_address = "tcp://*:5555"
 
 # The subscriber or the publisher must be fixed

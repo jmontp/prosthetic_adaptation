@@ -1,4 +1,6 @@
 # Import communication
+from pyqtgraph.graphicsItems.DateAxisItem import MAX_REGULAR_TIMESTAMP
+from pyqtgraph.graphicsItems.PlotDataItem import dataType
 import zmq
 
 # Import plotting
@@ -15,6 +17,8 @@ from time import perf_counter
 # of the plotter
 import argparse
 
+#Import date_time to save timestamps
+import datetime
 
 ############################
 # Command Line Arguments #
@@ -30,8 +34,9 @@ parser.add_argument('-l','--local', help="Run local plotting server",
                     action="store_true")
 parser.add_argument('-s','--static_ip', help="Run server expecting that server has static ip", 
                     action="store_true")
+parser.add_argument('-c','--column', help="Create new plots in separate columns",
+                    action="store_false")
 args = parser.parse_args()
-
 
 # If big screen mode is on, set font sizes big
 if args.bigscreen:
@@ -41,7 +46,6 @@ if args.bigscreen:
     legend_style = {'labelTextSize':'14pt'}
     tick_size = 25
     
-
 # Else set to normal size
 else:
     axis_label_style = {'font-size':'10pt'}
@@ -51,6 +55,10 @@ else:
 
 #Get flag for local plotting
 fixed_address = args.local or args.static_ip
+
+# Define if a new subplot is placed in a 
+# new row or columns
+NEW_SUBPLOT_IN_ROW = args.column
 
 ###################
 # ZMQ Networking #
@@ -77,24 +85,57 @@ else:
 #Initialize subscriber
 socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
-############################
+
+###############################
+# Local Storage Configuration #
+###############################
+
+#Num of entry buffers
+MAX_LOCAL_STORAGE = 10000000
+
+#Initial number of traces
+INITIAL_NUM_TRACES = 50
+
+#Storage buffer - This will take around 3.73 GB of ram
+# Should last for 27 hours running at 100 Hz
+local_storage_buffer = np.zeros((INITIAL_NUM_TRACES,MAX_LOCAL_STORAGE))
+
+#Create an index to keep track where we are in the local storage buffer
+li = 0
+
+#Set how many traces we have 
+local_storage_buffer_num_trace = 1
+
+#To use the local storage buffer as the plotter array
+# we need to keep track of the bounds
+buffer_bounds = np.array([0,200])
+
+#Configure save path
+PLOT_SAVE_PATH = 'saved_plots/'
+
+
+#Create button callback method
+def save_current_plot():
+    plot_name = datetime.datetime.now()
+    total_name = (PLOT_SAVE_PATH + str(plot_name)).replace(' ','_')
+    np.save(total_name,local_storage_buffer[:local_storage_buffer_num_trace,
+                                            :li])
+    print(f"Saved the plot as {total_name}")
+
+
+###########################
 # PyQTgraph Configuration #
 ###########################
 
-
-### START QtApp #####
-# You MUST do this once (initialize things)
+#START QtApp 
+# You MUST do this once to initialize pyqtgraph
 app = QtGui.QApplication([])            
 
 # Width of the window displaying the curve
-WINDOW_WIDTH = 200                      
+NUM_DATAPOINTS_IN_PLOT = 200                      
 
 # Window title
 WINDOW_TITLE = "Real Time Plotter"
-
-# Define if a new subplot is placed in a 
-# new row or columns
-NEW_SUBPLOT_IN_ROW = True
 
 # Set background white
 pg.setConfigOption('background', 'w')
@@ -103,14 +144,11 @@ pg.setConfigOption('foreground', 'k')
 # Define the window object for the plot
 win = pg.GraphicsLayoutWidget(title=WINDOW_TITLE, show=False)
 
-
-#Create button callback method
-def save_button_clicked():
-    print("Pressed the button!")
 #Create button to save plots
 save_button = QtGui.QPushButton("Save Plot")
+
 #Attach Callback 
-save_button.clicked.connect(save_button_clicked)
+save_button.clicked.connect(save_current_plot)
 
 
 #Create the GUI
@@ -123,7 +161,6 @@ window.show()
 
 #Close view when exiting
 app.aboutToQuit.connect(window.close)
-
 
 # Create the plot from the json file that is passed in
 def initialize_plot(json_config, subplots_to_remove=None):
@@ -198,7 +235,7 @@ def initialize_plot(json_config, subplots_to_remove=None):
             new_plot.setLabel('left', plot_description['ylabel'],**axis_label_style)
 
         # Potential performance boost
-        new_plot.setXRange(0,WINDOW_WIDTH)
+        new_plot.setXRange(0,NUM_DATAPOINTS_IN_PLOT)
 
         # Get the y range
         if 'yrange' in plot_description:
@@ -323,7 +360,14 @@ while True:
         num_plots = len(subplots)
 
         # Initialize data buffer
-        Xm = np.zeros((sum(traces_per_plot),WINDOW_WIDTH))    
+        num_traces = sum(traces_per_plot)
+        Xm = np.zeros((num_traces,NUM_DATAPOINTS_IN_PLOT))
+
+        #Setup local data buffer
+        # Since we save using the index, we just need to update 
+        # the index and not set the buffer to zero
+        local_storage_buffer_index = 0
+        local_storage_buffer_num_trace = num_traces + 1
 
         # You can now plot data
         initialized_plot = True
@@ -334,6 +378,8 @@ while True:
         # Get last time to estimate fps
         lastTime = perf_counter()
 
+        # Get time to generate time stamps
+        firstTime = lastTime
     
     # Read some data and plot it
     elif (category == RECEIVED_DATA) and (initialized_plot == True):
@@ -342,6 +388,9 @@ while True:
         receive_np_array = recv_array(socket)
         # Get how many new values are in it
         num_values = receive_np_array.shape[1]    
+
+        #Increase the buffer bounds to plot the new data
+        buffer_bounds += num_values
 
         # Remember how much you need to offset per plot
         subplot_offset = 0
@@ -369,17 +418,28 @@ while True:
                 Xm[i,-num_values:] = receive_np_array[i,:]
                 # Set the data in the trace              
                 subplots_traces[i].setData(Xm[i,:])
+
+                # Update the local storage buffer
+                local_storage_buffer[i,li:li+num_values] = receive_np_array[i,:]
             
             # Update offset to account for the past loop's traces
             subplot_offset += traces_per_plot[plot_index]
 
+        #Calculate the current time stamp for the local storage buffer
+        curr_timestamp = firstTime - now
+        local_storage_buffer[local_storage_buffer_num_trace,li:li+num_values] = curr_timestamp
+
+        #Increase the local storage index variable
+        li += num_values
+
         # Update fps in title
         top_plot.setTitle(top_plot_title + f" - FPS:{fps:.0f}")
+
         # Indicate you MUST process the plot now
         QtGui.QApplication.processEvents()    
 
     elif category == NOT_RECEIVED_DATA:
-        #Process events
+        #Process other events to make plot responsive
         QtGui.QApplication.processEvents()    
 
           
