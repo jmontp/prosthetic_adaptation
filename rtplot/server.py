@@ -8,7 +8,8 @@ from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
 
 # Common imports 
-import numpy as np 
+import numpy as np
+import pandas as pd 
 
 # Get timer to calculate fps
 from time import perf_counter
@@ -90,6 +91,9 @@ socket.setsockopt_string(zmq.SUBSCRIBE, "")
 # Local Storage Configuration #
 ###############################
 
+# Width of the window displaying the curve
+NUM_DATAPOINTS_IN_PLOT = 200 
+
 #Num of entry buffers
 MAX_LOCAL_STORAGE = 10000000
 
@@ -101,7 +105,7 @@ INITIAL_NUM_TRACES = 50
 local_storage_buffer = np.zeros((INITIAL_NUM_TRACES,MAX_LOCAL_STORAGE))
 
 #Create an index to keep track where we are in the local storage buffer
-li = 0
+li = NUM_DATAPOINTS_IN_PLOT
 
 #Set how many traces we have 
 local_storage_buffer_num_trace = 1
@@ -113,9 +117,13 @@ buffer_bounds = np.array([0,200])
 #Configure save path
 PLOT_SAVE_PATH = 'saved_plots/'
 
+#We are going to use the traces per plot do add info to saved plots
+# since this is set below, initialize to none
+traces_per_plot = None
 
 #Create button callback method
 def save_current_plot():
+
     plot_name = datetime.datetime.now()
     total_name = (PLOT_SAVE_PATH + str(plot_name)).replace(' ','_')
     np.save(total_name,local_storage_buffer[:local_storage_buffer_num_trace,
@@ -129,10 +137,7 @@ def save_current_plot():
 
 #START QtApp 
 # You MUST do this once to initialize pyqtgraph
-app = QtGui.QApplication([])            
-
-# Width of the window displaying the curve
-NUM_DATAPOINTS_IN_PLOT = 200                      
+app = QtGui.QApplication([])                                 
 
 # Window title
 WINDOW_TITLE = "Real Time Plotter"
@@ -331,10 +336,9 @@ def rec_type():
 # Run until you get a keyboard interrupt
 # Initialize variables
 
-# Initialize plots expected the old plots to delete them
+# Initialize plots expects pointers to the old plots to delete them
 # since we have no plots, initialize to None
 subplots = None
-
 
 # Make sure that you don't try to plot data without having a plot
 initialized_plot = False
@@ -359,9 +363,8 @@ while True:
         # Get the number of plots
         num_plots = len(subplots)
 
-        # Initialize data buffer
+        # Get number of traces
         num_traces = sum(traces_per_plot)
-        Xm = np.zeros((num_traces,NUM_DATAPOINTS_IN_PLOT))
 
         #Setup local data buffer
         # Since we save using the index, we just need to update 
@@ -411,17 +414,16 @@ while True:
             
             # Update every trace
             for subplot_index in range(traces_per_plot[plot_index]):
+
                 # Get index to plot
                 i = subplot_offset + subplot_index
-                # Update the rolling buffer with new values
-                Xm[i,:-num_values] = Xm[i,num_values:]    
-                Xm[i,-num_values:] = receive_np_array[i,:]
-                # Set the data in the trace              
-                subplots_traces[i].setData(Xm[i,:])
-
+               
                 # Update the local storage buffer
                 local_storage_buffer[i,li:li+num_values] = receive_np_array[i,:]
-            
+
+                # Update the plot
+                subplots_traces[i].setData(local_storage_buffer[i,buffer_bounds[0]:buffer_bounds[1]])
+
             # Update offset to account for the past loop's traces
             subplot_offset += traces_per_plot[plot_index]
 
