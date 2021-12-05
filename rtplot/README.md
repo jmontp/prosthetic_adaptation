@@ -2,41 +2,56 @@
 
 # Real Time Plotting with pyqtgraph and ZMQ
 
-The point of this module is to be able to plot remotely over socket protocols using the [ZMQ library] (https://zeromq.org/). The use cases that I have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. This can also be used to plot local information in real time by using the localhost as the address to publish/subscribe data from. 
+The point of this module is to be able to plot remotely over socket protocols using the [ZMQ library](https://zeromq.org/). The use cases that I have in mind is plotting information from the raspberry pi to a host computer so that they can plot the data. This is very useful for setting up real time plots given pyqtgraph's performance. This can also be used to plot local information in real time by using the localhost as the address to publish/subscribe data from. 
 
 The main highlight in this plotter are the following:
 * **Fast Performance**. Can do 500+ fps on one trace using an i7-9750H processor
-* **Remote Plot Customizability**. The plot configuration is defined by the provider of the data. E.g. you only have to change code in one location 
+* **Remote Plot Customizability**. The plot configuration is defined by the provider of the data. E.g. if you are using a pi to collect data, the plot configuration is also stored on the pi so you only have to change code in one location 
+
+# Dependencies
+[PyZMQ](https://zeromq.org/languages/python/)
+
+[pyqtgraph](https://pyqtgraph.readthedocs.io/en/latest/installation.html)
 
 # How to use
+
+* Step 1
+
+   ``` python3 server.py```
+
+   Or, if you are on a big TV
+
+   ```python3 server.py --bigscreen```
+
+* Step 2
+   
+   Send data to the server
+
 
 The first step to plot is to execute the server.py file in the computer that you want to plot. This will wait for a configuration from the publisher and then plot the subsequent data that is sent over as numpy arrays. If a new plot configuration is sent, the plot will automatically update the plot and keep plotting data in the new format. 
 
 
 In order to use this library, you must import the rtplot.client module into your code. The first step is to define the configuration. There are two ways of doing this
 
-## Simple plot configuration
+## Simplest client plot configuration and data transfer
 
-In the simple plot configuration, you only need to send a list of the names of each trace for each plot. In other words, if you wanted to define two plots, one with phase and phase dot plots, and the other with ramp and stride length, the code would be as follows
+In the simplest plot configuration, you only need to indicate the amount of traces that you want (if you leave it empty, it will default to 1 trace). Then you need to send the data. The data must be a one or two dimensional numpy array (more info on this later).  
 
 ```
 from rtplot import client
 
-#Define a list of names for every plot
-plot1_traces = ['phase', 'phase_dot']
-plot2_traces = ['ramp','stride_length']
+#Initialize one plot with 5 traces
+client.initialize_plots(5)
 
-#Aggregate into list
-plot_config = [plot1_traces, plot2_traces]
 
-#Tell the server to initialize the plot
-client.initialize_plot(plot_config)
+for i in range(1000):
 
-#Everytime we send data we must receive data
-#to satisfy tcp flow
-client.wait_for_reply()  
-
+    #Send data
+    client.send_array(np.random.randn(5,1))
 ```
+
+More examples can be seen in simplest_test.py.
+
 
 ## Complex plot configuration
 
@@ -85,10 +100,6 @@ plot_config = [plot_1_config,plot_2_config]
 
 #Tell the server to initialize the plot
 client.initialize_plots(plot_config)
-
-#Everytime we send data we must receive data
-#to satisfy tcp flow
-client.wait_for_response()
 ```
 
 ## How to send data
@@ -140,8 +151,8 @@ plot_2_config = {'names': [f"gf{i+1}" for i in range(5)]}
 \begin{equation*}
     \text{data} = 
         \begin{bmatrix} 
-            phase_0 & \dots & phase_n \\
-            phase\_dot_0 & \dots & phase\_dot_n \\
+            phase_0 & \dots & phase_{n-1} \\
+            phase\_dot_0 & \dots & phase\_dot_{n-1} \\
             stride_0 & \dots & stride_{n-1}\\
             gf_{1_0} & \dots & gf_{1_{n-1}} \\
             gf_{2_0} & \dots & gf_{2_{n-1}} \\
@@ -162,16 +173,14 @@ $$ -->
  ```
 from rtplot import client 
 
+#Initialize plot
+client.initialize_plots()
 
 #Format the data as explained above
 data = ... 
 
 #Send data to server to plot
 client.send_array(data)
-
-#Everytime we send data we must receive data
-#to satisfy tcp flow
-client.wait_for_response()
  ```
  
 # A note on performance
@@ -184,6 +193,8 @@ To get the most performance out of the system, you want to set the 'yrange' conf
 
 # Examples
 
+[simplest_test.py](https://github.com/jmontp/prosthetic_adaptation/blob/master/rtplot/simplest_test.py) Contains many great examples on how to setup the client-side code. 
+
 ![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example2.png "Example 1")
 
 ![alt text](https://github.com/jmontp/prosthetic_adaptation/blob/master/.images/rtplot_example1.png "Example 2")
@@ -194,9 +205,6 @@ simulate_ekf.py contains example code. Look for calls to client.
 # Todo
 
 * Rename 'server' and 'client' to 'subscriber' and 'publisher' to better indicate the communication pattern. 
-* Create command line arguments for server to pass in ip of publisher so people don't need to modify file directly.
-* Create command line arguments for changing the window width. 
-* Have the plot persist when creating a new format (minor quality of life). 
 * Make the x-axis represent time.
 * Have a way to store entire datasets directly from the plotter (e.g. button of some sort).
-* Add performance vs trace and array size surface.
+* Add performance vs number of traces and array size surface. Include performance by varying yrange and other terms.
