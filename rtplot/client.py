@@ -11,8 +11,6 @@ import time
 from collections import OrderedDict
 
 
-
-
 ###################
 # ZMQ Networking #
 ##################
@@ -21,19 +19,42 @@ from collections import OrderedDict
 context = zmq.Context()
 
 #Socket to talk to server
-#Using the push - pull paradigm
+#Using the pub - sub paradigm to communicate
 socket = context.socket(zmq.PUB)
 
-#Local testing address 
-socket.connect("tcp://127.0.0.1:5555")
+#Global variable to keep track of last connected address
+prev_address = None
 
-#Pi address
-#socket.connect("tcp://10.0.0.200:5555")
+#Define this address in case we want to bind the client later
+bind_address = "tcp://*:5555"
+
+# The subscriber or the publisher must be fixed
+# set which is which here
+fixed_subscriber_prev = False
+# Add flag to indicate if we ever failed to bind
+failed_bind = False
 
 #Sleep so that the subscriber can join
 time.sleep(0.2)
 
+#We are the publisher, therefore, if the sub is fixed,
+# connect to it
+if fixed_subscriber_prev:
 
+    #Connect to the default address
+    socket.connect(prev_address)
+
+#If the subscriber is variable, then we are fixed
+# bind all incoming connections to the known port
+else:
+    try:
+        socket.bind(bind_address)
+    
+    #If you cannot connect to the socket, alert user and continue
+    except zmq.error.ZMQError as e:
+        failed_bind = True
+        print("rtplot.client: Could not connect to default address '{}'".format(e))
+        print("               Fine if doing local plots")
 
 ############################
 # PyQTgraph Configuration #
@@ -44,10 +65,63 @@ SENDING_PLOT_UPDATE = "0"
 SENDING_DATA = "1"
 
 
-def configure_ip(ip):
-    """Connect to a server at a specific IP address"""
+def local_plot():
+    """Send data to a plot in the same computer"""
 
-    socket.connect("tcp://{}".format(ip))
+    local_address = "tcp://127.0.0.1:5555"
+    configure_ip(local_address)
+
+    
+
+def configure_ip(ip=None, fixed_subscriber = True):
+    """Connect to a subscriber at a specific IP address
+    
+    Inputs
+    ------
+    ip: Ip address or string formated to protocol:address:port
+    fixed_subscriber: bool, defines if either the subscriber of the 
+                      publisher has a fixed ip address
+    """
+
+    #Get the current address
+    global prev_address
+    global fixed_subscriber_prev
+    
+    #Disconnect from the previous configuration
+    if fixed_subscriber_prev and not failed_bind:
+        socket.unbind(bind_address)
+    elif prev_address is not None:
+        socket.disconnect(prev_address)
+    
+    #If you just get the ip address and no port, format correctly
+    num_colons = ip.count(':')
+    
+    #You only got the ip address
+    if num_colons == 0:
+        connect_address = "tcp://{}:5555".format(ip)
+    #You got ip address and port
+    elif num_colons == 1:
+        connect_address = "tcp://{}".format(ip)
+    #You got everything
+    else:
+        connect_address = ip
+
+    print("rtplot.client: Connecting to address {}".format(connect_address))
+
+    #Connect to new configuration
+    if(fixed_subscriber):
+        socket.connect(connect_address)
+        prev_address = connect_address
+
+    else:
+        socket.bind(bind_address)
+        prev_address = None
+
+    #Remember the last conection you had
+    fixed_subscriber_prev = fixed_subscriber
+
+    #Sleep so that the connection can be established
+    time.sleep(1)
 
 
 def send_array(A, flags=0, copy=True, track=False):
@@ -129,6 +203,8 @@ def initialize_plots(plot_descriptions=1):
 
 #This is used as a unit test case
 def main():
+
+    local_plot()
 
     #  Do 10 requests, waiting each time for a response
     #Configure the plot

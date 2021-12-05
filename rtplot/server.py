@@ -24,7 +24,11 @@ import argparse
 parser = argparse.ArgumentParser()
 
 #Add argument to enable bigger fonts
-parser.add_argument("--bigscreen", help="Increase fonts to print in the big screen",
+parser.add_argument("-b","--bigscreen", help="Increase fonts to print in the big screen",
+                    action="store_true")
+parser.add_argument('-l','--local', help="Run local plotting server", 
+                    action="store_true")
+parser.add_argument('-s','--static_ip', help="Run server expecting that server has static ip", 
                     action="store_true")
 args = parser.parse_args()
 
@@ -45,7 +49,8 @@ else:
     legend_style = {'labelTextSize':'8pt'}
     tick_size = 12
 
-
+#Get flag for local plotting
+fixed_address = args.local or args.static_ip
 
 ###################
 # ZMQ Networking #
@@ -56,7 +61,20 @@ context = zmq.Context()
 
 # Using the pub - sub paradigm
 socket = context.socket(zmq.SUB)
-socket.bind("tcp://*:5555")
+
+#Current default is to connect to the neurobionics pi hotspot
+# since that is the current use case
+if not fixed_address:
+    #Connect to neurobionics pi - default behaviour for now
+    socket.connect("tcp://10.0.0.200:500")
+   
+#If we have a fixed address, then the subscriber can reach us
+# good for local plots or fixed ip address
+else:
+    #Bind so that you can get more
+    socket.bind("tcp://*:5555")
+
+#Initialize subscriber
 socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
 ############################
