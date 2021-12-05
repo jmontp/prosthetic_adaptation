@@ -1,6 +1,4 @@
 # Import communication
-from pyqtgraph.graphicsItems.DateAxisItem import MAX_REGULAR_TIMESTAMP
-from pyqtgraph.graphicsItems.PlotDataItem import dataType
 import zmq
 
 # Import plotting
@@ -112,7 +110,7 @@ local_storage_buffer_num_trace = 1
 
 #To use the local storage buffer as the plotter array
 # we need to keep track of the bounds
-buffer_bounds = np.array([0,200])
+buffer_bounds = np.array([0,NUM_DATAPOINTS_IN_PLOT])
 
 #Configure save path
 PLOT_SAVE_PATH = 'saved_plots/'
@@ -120,14 +118,37 @@ PLOT_SAVE_PATH = 'saved_plots/'
 #We are going to use the traces per plot do add info to saved plots
 # since this is set below, initialize to none
 traces_per_plot = None
+trace_info = None
 
 #Create button callback method
 def save_current_plot():
 
+    #Set which trace goes in which plot on the last element of the column
+    num_subplots = 0
+    trace_names = []
+    for i,(trace_name,subplot_index) in enumerate(trace_info):
+        # Add subplot index to last column
+        local_storage_buffer[i,li] = subplot_index
+        # Get the number of subplots
+        num_subplots = max(subplot_index,num_subplots)
+        # Add trace name
+        trace_names.append(trace_name)
+    
+    #Assign a new subplot for time
+    num_traces = len(trace_info)
+    trace_names.append("Time(s)")
+    local_storage_buffer[num_traces,li] = num_subplots+1
+
+    #Set the plot name as the current time
     plot_name = datetime.datetime.now()
-    total_name = (PLOT_SAVE_PATH + str(plot_name)).replace(' ','_')
-    np.save(total_name,local_storage_buffer[:local_storage_buffer_num_trace,
-                                            :li])
+    total_name = (PLOT_SAVE_PATH + str(plot_name)).replace(' ','_') + '.parquet'
+    
+    #Create the dataframe object so that we can add ifnro about the subplot names
+    df = pd.DataFrame(local_storage_buffer[:local_storage_buffer_num_trace,NUM_DATAPOINTS_IN_PLOT:li+1].T,
+                      columns=trace_names)
+    df.to_parquet(total_name)
+
+    #Output text confirming we saved
     print(f"Saved the plot as {total_name}")
 
 
@@ -185,6 +206,7 @@ def initialize_plot(json_config, subplots_to_remove=None):
     num_plots: Number of subplots
     top_plot: Reference to top plot object to update title of
     top_plot_title: Reference to top plot title string to add on FPS
+    trace_names: Array of trace names with subplot number attached to it
     """
     
 
@@ -197,6 +219,7 @@ def initialize_plot(json_config, subplots_to_remove=None):
     traces_per_plot = []
     subplots_traces = []
     subplots = []
+    trace_info = []
 
     # Initialize the top plot to None so that we can grab it
     top_plot = None
@@ -291,12 +314,14 @@ def initialize_plot(json_config, subplots_to_remove=None):
             new_plot.addItem(new_curve)
             # Store pointer to update later
             subplots_traces.append(new_curve)
+            # Store the current trace name
+            trace_info.append((trace_names[i],plot_num))
 
         # Add the new subplot
         subplots.append(new_plot)
 
     print("Initialized Plot!")
-    return traces_per_plot, subplots_traces, subplots, top_plot, top_plot_title
+    return traces_per_plot, subplots_traces, subplots, top_plot, top_plot_title, trace_info
 
 
 # Receive a numpy array
@@ -357,7 +382,7 @@ while True:
 
         # Initialize plot
         traces_per_plot, subplots_traces, subplots,\
-        top_plot, top_plot_title \
+        top_plot, top_plot_title, trace_info \
                 = initialize_plot(plot_configuration, subplots)
         
         # Get the number of plots
@@ -369,8 +394,10 @@ while True:
         #Setup local data buffer
         # Since we save using the index, we just need to update 
         # the index and not set the buffer to zero
-        local_storage_buffer_index = 0
+        li = NUM_DATAPOINTS_IN_PLOT
+        buffer_bounds = np.array([0,NUM_DATAPOINTS_IN_PLOT])
         local_storage_buffer_num_trace = num_traces + 1
+        local_storage_buffer[:local_storage_buffer_num_trace,:li] = 0
 
         # You can now plot data
         initialized_plot = True
@@ -382,7 +409,8 @@ while True:
         lastTime = perf_counter()
 
         # Get time to generate time stamps
-        firstTime = lastTime
+        firstTime = perf_counter()
+
     
     # Read some data and plot it
     elif (category == RECEIVED_DATA) and (initialized_plot == True):
@@ -428,8 +456,8 @@ while True:
             subplot_offset += traces_per_plot[plot_index]
 
         #Calculate the current time stamp for the local storage buffer
-        curr_timestamp = firstTime - now
-        local_storage_buffer[local_storage_buffer_num_trace,li:li+num_values] = curr_timestamp
+        curr_timestamp = now - firstTime
+        local_storage_buffer[local_storage_buffer_num_trace-1,li:li+num_values] = curr_timestamp
 
         #Increase the local storage index variable
         li += num_values

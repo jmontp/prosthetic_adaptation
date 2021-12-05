@@ -27,7 +27,7 @@ socket = context.socket(zmq.PUB)
 # to an address
 prev_address = None
 
-#This address will be used to bind any incoming address on port 5555
+#This address will be used to bind any incoming subscriber on port 5555
 # to the publisher
 bind_address = "tcp://*:5555"
 
