@@ -24,7 +24,7 @@ client.initialize_plots()
 for i in range(1000):
 
     #Send data
-    client.send_array(np.random.randn(1,1))
+    client.send_array(np.random.randn())
 #--------------------------------------------------------------------------------------------------
 
 
