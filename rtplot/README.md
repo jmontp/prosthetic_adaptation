@@ -9,8 +9,11 @@ The main highlight in this plotter are the following:
 * **Remote Plot Customizability**. The plot configuration is defined by the provider of the data. E.g. if you are using a pi to collect data, the plot configuration is also stored on the pi so you only have to change code in one location 
 
 # Dependencies
+
+On all computers/raspberry pi's
 [PyZMQ](https://zeromq.org/languages/python/)
 
+Just in the computer just for plotting
 [pyqtgraph](https://pyqtgraph.readthedocs.io/en/latest/installation.html)
 
 # How to use
