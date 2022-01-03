@@ -11,10 +11,12 @@ The main highlight in this plotter are the following:
 # Dependencies
 
 On all computers/raspberry pi's
-[PyZMQ](https://zeromq.org/languages/python/)
+
+* [PyZMQ](https://zeromq.org/languages/python/)
 
 Just in the computer just for plotting
-[pyqtgraph](https://pyqtgraph.readthedocs.io/en/latest/installation.html)
+
+* [pyqtgraph](https://pyqtgraph.readthedocs.io/en/latest/installation.html)
 
 # How to use
 
