@@ -24,7 +24,7 @@ math_utils.test_pd = False
 # kronecker product of all of them in runtime
 #--------------------------
 class KroneckerModel:
-    def __init__(self, output_name,*funcs,subjects=None,num_gait_fingerprint=5):
+    def __init__(self, output_name,*funcs,subjects=None,num_gait_fingerprint=4):
         self.funcs = funcs
 
         #Calculate the size of the parameter array
@@ -51,21 +51,23 @@ class KroneckerModel:
         self.gait_fingerprint_names = ["gf"+str(i) for i in range(1,num_gait_fingerprint+1)]
         #Todo: Add average pca coefficient
         self.cross_model_personalization_map = None
-        self.cross_model_inter_subject_average = None        
-        
+        self.cross_model_inter_subject_average = None      
+
+
+        #GP regression
+        self.prior_mean = np.zeros((size,1))
+        self.prior_cov = np.eye(size)
+        self.measurement_noise = 0.01
+
         if(subjects is not None):
             self.add_subject(subjects)
             self.fit_subjects()
             self.calculate_gait_fingerprint(n=num_gait_fingerprint)
         
-    
+    #Add a subject without running any fitting
     def add_subject(self,subjects):
-
         import os
-
         print("CWD is: " + os.getcwd())
-
-
         for subject,filename in subjects:
             self.subjects[subject] = \
                 {'filename': filename, \
@@ -73,7 +75,9 @@ class KroneckerModel:
                  'optimal_xi': [], \
                  'least_squares_info': [], \
                  'pca_axis': [], \
-                 'pca_coefficients': [] \
+                 'pca_coefficients': [], \
+                 'gait_coefficients': [], \
+                 'gait_coefficients_vanilla_pca': [], \
              }
 
     
@@ -104,14 +108,17 @@ class KroneckerModel:
         
         return row_function @ xi
 
-    #@vectorize(nopython=True)
     def evaluate_pandas(self, dataframe):
         rows = dataframe.shape[0]
         output = np.array(1).reshape(1,1,1)
             
         for func in self.funcs:
-            
-            output = (output[:,np.newaxis,:]*func.evaluate(dataframe[func.var_name].values[:,np.newaxis])[:,:,np.newaxis]).reshape(rows,-1)
+            #Knronecker product per state
+            #Get data
+            var_data = dataframe[func.var_name].values
+            var_data2 = var_data
+            intermediary_output = func.evaluate(var_data2)
+            output = (output[:,np.newaxis,:]*intermediary_output[:,:,np.newaxis]).reshape(rows,-1)
             
         return output
 
@@ -158,38 +165,72 @@ class KroneckerModel:
         return row_vector @ xi
     
 
-
-    #Future optimizations
-    #@numba.jit(nopython=True, parallel=True)
     def least_squares(self,dataframe,output,splits=50):
-
+        
+        #Initialize matrices to build them up with
+        # low rank updates
         RTR = np.zeros((self.size,self.size))
         yTR = np.zeros((1,self.size))
         RTy = np.zeros((self.size,1))
         yTy = 0
         num_rows = len(dataframe.index)
         
+        #Divide the dataset to sizes that can be fit in memory 
+        # for least squares calculations
         for sub_dataframe in np.array_split(dataframe,splits):
+
+            #Get the regressor matrix for the chunk
             R = self.evaluate_pandas(sub_dataframe)
            
+           #Get the expected output
             y = sub_dataframe[output].values[:,np.newaxis]
+
+            #Calculate the rank update
             RTR_ = R.T @ R
         
-            print("RTR rank: {} RTR shape {}".format(np.linalg.matrix_rank(RTR,hermitian=True),RTR.shape))
+            #print("RTR rank: {} RTR shape {}".format(np.linalg.matrix_rank(RTR,hermitian=True),RTR.shape))
             
+            #Add the low rank update to the accumulator matrices
             RTR += RTR_
             yTR += y.T @ R
             RTy += R.T @ y
             yTy += y.T @ y
         
+
         try:
-            result = (np.linalg.solve(RTR, RTy), num_rows, RTR, RTy, yTR, yTy)
+            x = np.linalg.solve(RTR, RTy)
+            residual = np.sqrt((x.T @ RTR @ x - x.T @ RTy - yTR @ x + yTy)/num_rows)
+
+            result = (x, num_rows, residual, RTR, RTy, yTR, yTy)
         except:
             print('Singular RTR in optimal fit least squares')
-            result = (0, num_rows, RTR, RTy, yTR, yTy)
+            x = 0
+            residual = float('inf')
+            result = (0, num_rows, residual, RTR, RTy, yTR, yTy)
 
         return result
+    
+
+    def gp_regression(self,dataframe,output):
+
+        #Calculate the Vandermont matrix
+        A = self.evaluate_pandas(dataframe)
+        
+        num_rows = A.shape[1]
+
+        y = dataframe[output].values[:,np.newaxis]
+      
+        #Calculate  using the Woobury Identity
+        gamma_inv = 1/self.measurement_noise
+
+        prior_cov_inv = np.linalg.inv(self.prior_cov)        
+
+        posterior_cov = np.linalg.inv(gamma_inv * A.T @ A + prior_cov_inv)
+
+        posterior_mean = posterior_cov @ (gamma_inv * A.T @ y + prior_cov_inv @ self.prior_mean)
+
        
+        return posterior_mean, posterior_cov
 
 
     def fit_subjects(self):
@@ -199,14 +240,33 @@ class KroneckerModel:
             print(subject_dict['filename'])
             data = subject_dict['dataframe']
             output = self.least_squares(data,self.output_name)
+            gp_output = self.gp_regression(data,self.output_name)
             subject_dict['optimal_xi'] = output[0]
             subject_dict['num_rows'] = output[1]
-            subject_dict['least_squares_info'] = output[2:]
+            subject_dict['residual'] = output[2]
+            subject_dict['least_squares_info'] = output[3:]
+            subject_dict['gp_mean'] = gp_output[0]
+            subject_dict['gp_cov'] = gp_output[1]
+            x = gp_output[0]
+            RTR, RTy, yTR, yTy = output[3:]
+            num_rows = output[1]
+            gp_residual = np.sqrt((x.T @ RTR @ x - x.T @ RTy - yTR @ x + yTy)/num_rows)
+            subject_dict['gp_residual'] = gp_residual
+
         
     def scaled_pca_single_model(self, XI=None):
         
+        """
+        Calculate the rmse scaled PCA from the paper
+        """
+
+        #Get the number of subjects        
         num_subjects = len(self.subjects)
+        
+        #Calculate the matrix of user fits
         Ξ = np.array([subject['optimal_xi'] for subject in self.subjects.values()]).reshape(num_subjects,-1)
+        
+        #Calculate the scaling factors
         G_total = 0
         N_total = 0
         
@@ -217,32 +277,63 @@ class KroneckerModel:
         #This is equation eq:inner_regressor in the paper!
        	G = G_total/N_total
            
-        #This function verifies positive semidefinite, so we dont have to
-        personalization_map_scaled, pca_info = scaled_pca(Ξ,G)
+        #Get the personalization map and the pca info
+        personalization_map, pca_info = scaled_pca(Ξ,G)
                 
         self.inter_subject_average_fit = pca_info['inter_subject_average_fit']
         
+        #Calculate the residual for each subject
+        for subject_dict in self.subjects.values():
+            x = self.inter_subject_average_fit
+            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
+            num_rows = subject_dict['num_rows']
+            avg_subject_residual = np.sqrt((x.T @ RTR @ x - x.T @ RTy - yTR @ x + yTy)/num_rows)
+            subject_dict['avg_subject_residual'] = avg_subject_residual
+
+
         self.scaled_pca_eigenvalues = pca_info['eigenvalues']
         
-        return personalization_map_scaled
+        return personalization_map
 
 
     def estimate_xi(self,gait_finterprint_vector):
         return self.personalization_map_scaled*gait_finterprint_vector
 
-    def calculate_gait_fingerprint(self,n=None,cum_var=0.95):
+
+
+    
+
+    def calculate_gait_fingerprint(self,n,cum_var=0.95):
+        """
+        Calculate the gait fingerprints for every value up to n
+
+        This is usefull to test the impact of the gait fingerprints
+        """    
+        
         num_subjects = len(self.subjects.values())
         #Get all the gait fingerprints into a matrix
         XI = np.array([subject['optimal_xi'] for subject in self.subjects.values()]).reshape(num_subjects,-1)
+        
+        #Get the mean gait fingerprint
         XI_mean = XI.mean(axis=0).reshape(1,-1)
+
+        #Get the deviations from the average
         XI_0 = XI - XI_mean
-        pca = PCA(n_components=num_subjects)
+
+        #Initialize PCA object for vanilla pca calculation
+        pca = PCA(n_components=min(num_subjects,XI_0.shape[1]))
         pca.fit(XI_0) 
-        self.pca_result = pca
+        self.vanilla_pca_result = pca
+
+        #
+        scaled_pca = self.scaled_pca_single_model()
+        self.personalization_map_vanilla_list = []
+        self.personalization_map_list = []
+
         
-        self.personalization_map = (pca.components_[:n,:]).T
-        self.personalization_map_scaled = self.scaled_pca_single_model()
-        
+        local_vanilla_pmap = (pca.components_[:n,:]).T
+        local_pmap = scaled_pca[:,:n]
+
         #Calculate gait fingerprints for every individual
         for subject_dict in self.subjects.values():
 
@@ -250,27 +341,34 @@ class KroneckerModel:
             RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
             
             #Get scaled personalization map gait fingerprint
-            pmap = self.personalization_map_scaled
+            pmap = local_pmap
             avg_fit = self.inter_subject_average_fit
             
             RTR_prime = (pmap.T) @ RTR @ pmap
             RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
-            subject_dict['gait_coefficients'] = np.linalg.solve(RTR_prime,RTy_prime)
+            subject_dict['gait_coefficients'].append(np.linalg.solve(RTR_prime,RTy_prime))
             
             
             
             #Get bad (naive pca) personalization map gait fingerprint 
-            pmap = self.personalization_map
+            pmap = local_vanilla_pmap
             avg_fit = self.inter_subject_average_fit
             
             RTR_prime = (pmap.T) @ RTR @ pmap
             RTy_prime = (pmap.T) @ RTy-(pmap.T) @ RTR @ avg_fit
             
-            subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
+            subject_dict['gait_coefficients_vanilla_pca'].append(np.linalg.solve(RTR_prime,RTy_prime))
     
 
+        #Get the personalization map with our rmse scaling
+        self.personalization_map = local_pmap
+
+        #Get the personalization map with normal pca
+        self.personalization_map_vanilla = local_vanilla_pmap
             
     def add_left_out_subject(self,subjects):
+
+
         for subject,filename in subjects:
             self.one_left_out_subjects[subject] = \
                 {'filename': filename, \
@@ -285,27 +383,71 @@ class KroneckerModel:
             print("One left out fit: " + subject)
             data = subject_dict['dataframe']
 
-            #Temporary addition to try to fit with only walking data
-            #data = data[data['ramp'] == 0.0]
-            
-            output = self.least_squares(data,self.output_name)
-            subject_dict['optimal_xi'] = output[0]
-            subject_dict['num_rows'] = output[1]
-            subject_dict['least_squares_info'] = output[2:]
+            num_of_pmaps = len(self.personalization_map)
 
-            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
-            RTR_prime = (self.personalization_map_scaled.T) @ RTR @ self.personalization_map_scaled
-            RTy_prime = (self.personalization_map_scaled.T) @ RTy-(self.personalization_map_scaled.T) @ RTR @ self.inter_subject_average_fit
-            
-            subject_dict['gait_coefficients'] = np.linalg.solve(RTR_prime,RTy_prime)
-            
-            RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
-            RTR_prime = (self.personalization_map.T) @ RTR @ self.personalization_map
-            RTy_prime = (self.personalization_map.T) @ RTy-(self.personalization_map.T) @ RTR @ self.inter_subject_average_fit
-            #print(f'asset')            
-            
-            subject_dict['gait_coefficients_unscaled'] = np.linalg.solve(RTR_prime,RTy_prime)
-            
+            subject_dict['gait_coefficients'] = []
+            subject_dict['gf_residual'] = []
+            subject_dict['gait_coefficients_unscaled'] = []
+            subject_dict['gf_residual_scaled'] = []
+
+            for ii in range(num_of_pmaps):
+
+                #Temporary addition to try to fit with only walking data
+                #data = data[data['ramp'] == 0.0]
+                
+                pmap_scaled = self.personalization_map_scaled[ii]
+                pmap_vanilla = self.personalization_map_vanilla[ii]
+
+                output = self.least_squares(data,self.output_name)
+                gp_output = self.gp_regression(data,self.output_name)
+                subject_dict['optimal_xi'] = output[0]
+                subject_dict['num_rows'] = output[1]
+                subject_dict['residual'] = output[2]
+                subject_dict['least_squares_info'] = output[3:]
+                subject_dict['gp_mean'] = gp_output[0]
+                subject_dict['gp_cov'] = gp_output[1]
+                
+                xi_avg = self.inter_subject_average_fit
+
+                RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
+                RTR_prime = (pmap_scaled.T) @ RTR @ pmap_scaled
+                RTy_prime = (pmap_scaled.T) @ RTy-(pmap_scaled.T) @ RTR @ xi_avg
+                yTR_prime = yTR @ pmap_scaled - xi_avg.T @ RTR @ pmap_scaled
+                yTy_prime = yTy - xi_avg.T @ RTy - yTR @ xi_avg + xi_avg.T @ RTR @ xi_avg
+
+                gf_scaled = np.linalg.solve(RTR_prime,RTy_prime)
+                
+                residual_scaled_squared = gf_scaled.T @ RTR_prime @ gf_scaled \
+                                  - gf_scaled.T @ RTy_prime \
+                                  - yTR_prime @ gf_scaled \
+                                  + yTy_prime
+
+                num_rows = subject_dict['num_rows']
+
+                residual_scaled = np.sqrt(residual_scaled_squared/num_rows)
+
+                subject_dict['gait_coefficients'].append(gf_scaled)
+                subject_dict['gf_residual'].append(residual_scaled)
+
+
+                RTR, RTy, yTR, yTy = subject_dict['least_squares_info']
+                RTR_prime = (pmap_vanilla.T) @ RTR @ pmap_vanilla
+                RTy_prime = (pmap_vanilla.T) @ RTy-(pmap_vanilla.T) @ RTR @ xi_avg
+                yTR_prime = yTR @ pmap_vanilla - xi_avg.T @ RTR @ pmap_vanilla
+                yTy_prime = yTy - xi_avg.T @ RTy - yTR @ xi_avg + xi_avg.T @ RTR @ xi_avg
+
+                gf_unscaled = np.linalg.solve(RTR_prime,RTy_prime)
+                
+                residual_unscaled_squared = gf_unscaled.T @ RTR_prime @ gf_unscaled \
+                                  - gf_unscaled.T @ RTy_prime \
+                                  - yTR_prime @ gf_unscaled \
+                                  + yTy_prime
+
+                residual_unscaled = np.sqrt(residual_unscaled_squared/num_rows)
+
+                subject_dict['gait_coefficients_unscaled'].append(gf_unscaled)
+                subject_dict['gf_residual_scaled'].append(residual_unscaled)
+
 
 
     def __str__(self):
@@ -411,7 +553,7 @@ def scaled_pca(Ξ,G,num_gait_fingerprint=5):
                     'eigenvalues':scaled_pca_eigenvalues,
                     'inter_subject_average_fit':inter_subject_average_fit}
         #Return the personalization map
-        return scaled_pca_components[:,:num_gait_fingerprint], pca_info
+        return scaled_pca_components[:,:], pca_info
 
 def calculate_cross_model_p_map(models):
     
