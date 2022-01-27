@@ -8,6 +8,8 @@ from functools import lru_cache
 import os
 from scipy.io import loadmat
 
+
+#TODO - verify if I can delete this function since I think its not neccesary
 def get_column_name(column_string_list, num_last_keys):
     filter_strings = ['right', 'left']
     filtered_list = filter(
@@ -86,6 +88,10 @@ def skip_column(column_name):
         
 
 def downsample_forceplates(columns_to_endpoint_dict):
+    """
+    This function will downsample everything with a forceplate from 
+    1kHz to 100Hz
+    """
     #Do the same for all the endpoint lists
     for feature_list in columns_to_endpoint_dict.values():
         #Traverse through all the end-point names
@@ -95,7 +101,16 @@ def downsample_forceplates(columns_to_endpoint_dict):
                 #The first index corresponds to the data at that end point
                 feature_list[1][i] = feature_list[1][i][::10]
 
+
 def add_nan_padding(columns_to_endpoint_dict):
+    """
+    This function will add nan to values to fill the 
+    gaps when a feature does not have an experiment
+
+    Example, joint angles do not appear in stairs (I think)
+    """
+
+
     #Do a double for loop to compare all the values with one another
     for column_name_1, column_endpoint_list_1 in columns_to_endpoint_dict.items():
         #Filter based on the endpoint name
@@ -126,13 +141,12 @@ def add_nan_padding(columns_to_endpoint_dict):
                 
                 #If you don't have the key, then add it
                 except KeyError as e:
-                    print(f"{column_name_1} did not have key {key_2} relative to {column_name_2}")
+                    #print(f"{column_name_1} did not have key {key_2} relative to {column_name_2}")
 
                     #Add the endpoint name
                     new_endpoint_name = key_2 + '/' + feature_1_name
                     column_endpoint_list_1[0].append(new_endpoint_name)
 
-                    
                     #Add an empty dataset that matches the rest of the datasets
                     nan_array = np.empty(dict_2[key_2].shape)
                     nan_array[:] = np.nan
@@ -140,6 +154,10 @@ def add_nan_padding(columns_to_endpoint_dict):
 
 
 def add_experiment_info(random_endpoint_list, df):
+        """
+        This function will add information stored in the trial name
+        to the pandas dataframe
+        """
         
         ## Add task information 
         sorted_random_endpoint_list =  [(y,x.shape[0]) for y,x in sorted(zip(*random_endpoint_list),
@@ -190,7 +208,6 @@ def add_experiment_info(random_endpoint_list, df):
 
                 #The walking speed is user selected and not specified
                 experiment_speed_vector = [np.nan]*experiment_num_rows
-
 
             elif(experiment_type == 'Sts'):
 
@@ -248,11 +265,10 @@ def flatten_r01_normalized():
         #Get the data for the subject
         data = h5py_file[subject]
 
-
-        # Store all the end points
+        # Obtain the names and references to the data for 
+        # each end point
         columns_to_endpoint_dict = {}
         get_end_points_R01(data, columns_to_endpoint_dict)
-
 
         #If we are doing Streaming dataset, we need to downsample the 
         #force plates as they have have 1kHz sampling vs everything 
@@ -267,11 +283,8 @@ def flatten_r01_normalized():
         add_nan_padding(columns_to_endpoint_dict)
        
 
-        # This dictionary stores dataframes based on the amount of strides that
-        # they have
-        strides_to_dataframes_dict = {}
-        # Which column will be used to get information about each row
-        selected_column = 'jointAngles_AnkleAngles_x'
+        # Create the pandas dataframe to store all the info
+        df = DataFrame()
 
         #Save one list so that we can add task information
         random_endpoint_list = None
@@ -296,30 +309,14 @@ def flatten_r01_normalized():
             # Get the data to add it to a dataframe
             data_array = np.concatenate(sorted_end_point_list, axis=0).flatten()
 
-            # Calculate how many strides are in the dataframe
-            len_arr = data_array.shape[0]
-            len_key = len_arr
-
-            # Add the key to the dataframe
-            try:
-                strides_to_dataframes_dict[len_key][column_name] = data_array
-            except KeyError:
-                strides_to_dataframes_dict[len_key] = DataFrame()
-                strides_to_dataframes_dict[len_key][column_name] = data_array
-
-        df = None
-        #Save the appropriate dataset
-        for dataframe in strides_to_dataframes_dict.values():
-            #if selected_column in dataframe.columns:
-            df = dataframe
-
+            #Add data array to the column
+            df[column_name] = data_array
 
         #Add experiment information such as ambulation mode, speed, and incline
         add_experiment_info(random_endpoint_list,df)
 
+        #Save to parquet file
         df.to_parquet(save_name)
-        pass
-        print(f"Number of groups {len(list(strides_to_dataframes_dict.keys()))}")
 
 
 # This is a helper function to determine where trials have different strides
