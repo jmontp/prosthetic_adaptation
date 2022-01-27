@@ -319,63 +319,6 @@ def flatten_r01_normalized():
         df.to_parquet(save_name)
 
 
-# This is a helper function to determine where trials have different strides
-def determine_different_strides():
-    
-    file_name = '../../data/r01_dataset/Streaming.mat'
-    h5py_file = h5py.File(file_name)['Streaming']
-
-    # Iterate through all the subjects, make a file per subject to keep it RAM bound
-    for subject in h5py_file.keys():
-        
-
-        print("Testing subject: " + subject)
-
-        #Get the data for the subject
-        data = h5py_file[subject]
-
-
-        # Store all the end points
-        columns_to_endpoint_list = {}
-        get_end_points_R01(data, columns_to_endpoint_list)
-
-
-        #If you know which element you want to compare, set it here
-        desired_element_name = "forceplates_LCoP_x"
-        # desired_element_name = 'jointAngles_LHipAngles_x'
-        desired_element_endpoint_list = columns_to_endpoint_list[desired_element_name]
-
-
-        #Second desired element
-        # second_element_name = 'jointAngles_LAnkleAngles_x'
-        second_element_name = 'jointForces_LAnkleForce_x'
-        endpoint_list = columns_to_endpoint_list[second_element_name]
-        
-        #Create dictionaries to evaluate the experiments that each feature has
-        dict_1 = {'/'.join(path_name.split('/')[:-2]) : path_dataset for path_name, path_dataset in zip(*desired_element_endpoint_list)}
-        dict_2 = {'/'.join(path_name.split('/')[:-2]) : path_dataset for path_name, path_dataset in zip(*endpoint_list)}
-
-        
-        #Verify if all the trials are in the other dictionary
-        for key_1 in dict_1:
-            try:
-                    dict_2[key_1]
-            except KeyError as e:
-                print(f"{second_element_name} did not have key {key_1} relative to {desired_element_name}")
-                dict_2[key_1] = np.empty(dict_1[key_1].shape)
-                dict_2[key_1][:] = np.nan
- 
-        for key_2 in dict_2:
-            try:
-                dict_1[key_2]
-            except KeyError as e:
-                print(f"{desired_element_name} did not have key {key_1} relative to {second_element_name}")
-                dict_1[key_2] = np.empty(dict_2[key_2].shape)
-                dict_1[key_2][:] = np.nan
-
-
-        pass
-
         
  
 
