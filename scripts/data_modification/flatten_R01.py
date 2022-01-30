@@ -56,17 +56,7 @@ def get_end_points_R01(d,out_dict,parent_key='', sep='/',num_last_keys=2):
                     else:
                         out_dict[column_string_prepended][0].append(new_key+"_"+str_dict[i])
                         out_dict[column_string_prepended][1].append(v_curr)  
-             
-
-            # elif(len(v.shape)>1):   
-            #     print(f'{v.name} shape {v.shape}')
-            #     if (column_string not in out_dict):
-            #         out_dict[column_string] = [[new_key],[v]]
-            #     else:
-            #         out_dict[column_string][0].append(new_key)
-            #         out_dict[column_string][1].append(v)
-            # else:
-            #     pass
+            
 
 
 def skip_column(column_name):
@@ -151,6 +141,7 @@ def add_nan_padding(columns_to_endpoint_dict):
                     nan_array = np.empty(dict_2[key_2].shape)
                     nan_array[:] = np.nan
                     column_endpoint_list_1[1].append(nan_array)
+
 
 
 def add_experiment_info(random_endpoint_list, df):
