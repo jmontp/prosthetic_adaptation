@@ -168,7 +168,7 @@ def add_experiment_info(random_endpoint_list, df):
         type_vector = []
         speed_vector = []
         incline_vector = []
-
+        time_vector = []
         
         for experiment_name, experiment_num_rows in sorted_random_endpoint_list:
             
@@ -182,6 +182,10 @@ def add_experiment_info(random_endpoint_list, df):
 
             #Get the experiment type vector
             experiment_type_vector = [experiment_type]*experiment_num_rows
+
+            #Get the experiment type vector
+            dt = 1.0/100.0
+            experiment_time_vector = [dt*i for i in range(experiment_num_rows)]
 
             #Handle every experiment type 
             if(experiment_type == 'Run'):
@@ -237,11 +241,18 @@ def add_experiment_info(random_endpoint_list, df):
             type_vector.extend(experiment_type_vector)
             speed_vector.extend(experiment_speed_vector)
             incline_vector.extend(experiment_incline_vector)
+            time_vector.extend(experiment_time_vector)
 
 
         df['ambulationMode'] = type_vector
         df['inclineDeg'] = incline_deg
         df['speed'] = speed_vector
+        df['time'] = time_vector
+
+
+        ### Add time information
+        df['dt'] = 1.0/100.0
+
 
 #This is the main function that will perform the flattening
 # Only works for streaming right now
@@ -258,7 +269,8 @@ def flatten_r01_normalized():
     for subject in h5py_file.keys():
         
         #Create the name to save to
-        save_name = f'../../data/ro1_dataset/r01_flattened_{subject}.parquet'
+        save_name = f'../../data/r01_dataset/r01_{dataset}_flattened_{subject}.parquet'
+        # save_name = f'r01_flattened_{subject}.parquet'   
 
         print("Flattening subject: " + subject)
 
@@ -316,7 +328,9 @@ def flatten_r01_normalized():
         add_experiment_info(random_endpoint_list,df)
 
         #Save to parquet file
-        df.to_parquet(save_name)
+        abs_save_name = os.path.abspath(save_name)
+        print(f"Saving in {abs_save_name}")
+        df.to_parquet(path = abs_save_name)
 
 
         
