@@ -5,4 +5,3 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import kmodel
 import ekf
 import utils
-import rtplot
