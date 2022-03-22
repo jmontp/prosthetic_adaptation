@@ -51,7 +51,29 @@ class PolynomialBasis(Basis):
 #This will create a Polynomial Basis with n harmonic frequencies
 # The variable name is also needed
 class FourierBasis(Basis):
+    """
+    Fourier basis function
+
+    Keyword Arguments
+    n - number of basis functions
+        Evaluate returns output of size 2*n + 1
+        where every pair element is cos 
+        and every odd element is sine
+    var_name - name of the basis function
+    """
+
     def __init__(self, n, var_name):
+        """
+        Fourier basis function
+
+        Keyword Arguments
+        n - number of basis functions
+            Evaluate returns output of size 2*n + 1
+            where every pair element is cos 
+            and every odd element is sine
+        var_name - name of the basis function
+        """
+
         Basis.__init__(self, n, var_name)
         self.size = 2*n+1
 
@@ -65,8 +87,8 @@ class FourierBasis(Basis):
         #Initialize everything as one to get 
         result = np.ones((x.shape[0],self.size))
        
-        result[:,1:self.n+1] = np.cos(2*np.pi*x @ l)
-        result[:,self.n+1:] =  np.sin(2*np.pi*x @ l)
+        result[:,1:self.n+1] = np.sin(2*np.pi*x @ l)
+        result[:,self.n+1:] =  np.cos(2*np.pi*x @ l)
         return result
 
 
