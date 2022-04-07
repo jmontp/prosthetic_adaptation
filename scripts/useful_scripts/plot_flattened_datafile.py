@@ -3,7 +3,7 @@ import pandas as pd
 
 trial = 's1x2i7x5'
 subject = 'AB07'
-joint = 'jointangles_pelvis_z'
+joint = 'jointangles_thigh_x'
 filename = '../../data/flattened_dataport/dataport_flattened_partial_{}.parquet'.format(subject)
 
 

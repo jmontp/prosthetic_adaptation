@@ -32,6 +32,11 @@ class PersonalMeasurementFunction:
         #Keep the list of the output names in order
         self.output_names = output_names
 
+        #Have a function to define the number of statest that are taken as the input
+        self.num_states = models[0].model.get_num_basis()
+
+        #Have a property for the number of gait fingerprint
+        self.num_gait_fingerprint = models[0].num_gait_fingerpints
         pass
 
 
@@ -52,7 +57,7 @@ class PersonalMeasurementFunction:
         for that subject
 
         Keyword arguments:
-        dataset -- numpy array that contains the model inputs and the gait fingeprints
+        input_data -- numpy array that contains the model inputs and the gait fingeprints
                    shape (num_datapoints, num_models + num_gait_fingerprints)
                    
         use_personalized_fit -- Boolean if true just use the fit for 

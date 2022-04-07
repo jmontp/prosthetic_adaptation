@@ -27,7 +27,6 @@ def calculate_regression_matrix(model, *data):
 
 
 
-
 def least_squares_r(output, R):
 		return np.linalg.solve(R.T @ R, R.T @ output)
 
@@ -36,7 +35,7 @@ def least_squares_b(RTR,RTY):
 
 
 #Calculate the least squares based on the data
-def least_squares(model, output, *data):
+def least_squares(model, output,*data,l2_lambda=0.0):
 	
 	R = calculate_regression_matrix(model, *data)
 
@@ -44,7 +43,7 @@ def least_squares(model, output, *data):
 	if isinstance(output,(np.ndarray)):
 		output = np.array(output)
 
-	return np.linalg.solve(R.T @ R, R.T @ output), R.T @ R, R.T @ output
+	return np.linalg.solve(R.T @ R + l2_lambda*np.eye(R.shape), R.T @ output), R.T @ R, R.T @ output
 
 
 

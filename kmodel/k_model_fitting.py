@@ -60,7 +60,7 @@ class KModelFitter():
         residual = np.sqrt((x @ RTR @ x.T - x @ RTy - yTR @ x.T + yTy)/num_datapoints)
 
 
-        return x, residual
+        return x, (residual, RTR, num_datapoints)
 
 
     

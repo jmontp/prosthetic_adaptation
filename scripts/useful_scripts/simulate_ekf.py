@@ -6,36 +6,61 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from cycler import cycler
+from time import sleep
+
 
 #Relative Imports
 from context import kmodel
 from context import ekf
 from context import utils
-from context import rtplot
+from kmodel.personalized_model_factory import PersonalizedKModelFactory
+from rtplot import client
 from ekf.measurement_model import MeasurementModel
 from ekf.dynamic_model import GaitDynamicModel
 from ekf.ekf import Extended_Kalman_Filter
-from ekf.ekf import default_ekf
 from kmodel.kronecker_model import model_loader
-from kmodel import kronecker_model
 from utils.math_utils import get_rmse
 from rtplot import client
 
+#Import low pass filtering for speed filtering
+from scipy.signal import butter, lfilter, firwin
+
+
+#numpy print configuration
+np.set_printoptions(precision=3)
+np.set_printoptions(suppress=True)
+
+
+#Import the personalized model 
+factory = PersonalizedKModelFactory()
+
+subject_model = "AB01"
+
+model_dir = f'../../data/kronecker_models/left_one_out_model_{subject_model}.pickle'
+
+model = factory.load_model(model_dir)
+
+measurement_model = MeasurementModel(model,calculate_output_derivative=True)
+
+
+#Define the number of gait fingerprints
+num_gait_fingerprints = measurement_model.personal_model.num_gait_fingerprint
 
 
 def simulate_ekf():
     pass
 #%%
 #Real time plotting configuration
-
 plot_1_config = {#Trace Config
                  'names': ['phase', 'phase_dot', 'stride_length','phase_a','phase_dot_a','stride_length_a'],
                  'colors' : ['r','g','b']*2,
-                 'line_style' : ['']*5 + ['-']*5,
+                 'line_style' : ['']*3 + ['-']*3,
                 #Titles and labels 
                  'title': "States",
                  'ylabel': "reading (unitless)",
-                 'xlabel': 'Varied'}
+                 'xlabel': 'Varied',
+                 'yrange': [2.5,-0.5]
+                 }
 
 plot_2_config = {#Trace Config
                 'names': ['ramp', 'ramp_a'],
@@ -44,87 +69,144 @@ plot_2_config = {#Trace Config
                 #Titles and labels 
                 'title': "Ramp",
                 'ylabel': "reading (unitless)",
-                'xlabel': 'Degree Incline (Deg)'}
+                'xlabel': 'Degree Incline (Deg)',
+                'yrange': [-10,10]
+                }
 
 plot_3_config = {#Trace Config
-                'names': [f"gf{i+1}" for i in range(5)] + [f"gf{i+1}_optimal" for i in range(5)],
-                'colors' : ['r','g','b','c','m']*2,
-                'line_style' : ['']*5 + ['-']*5,
+                'names': [f"gf{i+1}" for i in range(num_gait_fingerprints)] 
+                       + [f"gf{i+1}_optimal" for i in range(num_gait_fingerprints)],
+                'colors' : (['r','g','b','c','m'][:num_gait_fingerprints])*2,
+                'line_style' : ['']*num_gait_fingerprints + ['-']*num_gait_fingerprints,
                 #Titles and labels 
                 'title': "Gait Fingerprint Vs Expected Gait Fingerprint",
                 'ylabel': "reading (unitless)",
-                'xlabel': 'STD Deviation'}
+                'xlabel': 'STD Deviation',
+                'yrange': [-10,7]
+                }
+# No joint velocity for now
+plot_4_config = {
+                'names' : ['meas knee vel', 'meas ankle vel', 'meas hip vel', 'pred knee vel', 'pred ankle vel', 'pred hip vel'],
+                'colors' : ['r','b','g']*2,
+                'line_style': ['']*3 + ['-']*3,
+                'title' : "Measured vs Predicted Joint Angles",
+                'ylabel': "Joint Angle (deg)",
+                'yrange': [-180,180]
+}
 
-client.initialize_plots([plot_1_config,plot_2_config,plot_3_config])
-client.wait_for_response()
+plot_5_config = {
+                'names' : ['meas knee', 'meas ankle', 'meas hip', 'pred knee', 'pred ankle', 'pred hip'],
+                'colors' : ['r','b','g']*2,
+                'line_style': ['-']*3 + ['']*3,
+                'title' : "Measured vs Predicted Joint Angle",
+                'ylabel': "Joint Angle Velocity (deg)",
+                'yrange': [-200,300]
+}
+
+client.local_plot()
+client.initialize_plots([plot_1_config,
+                         plot_2_config, 
+                         plot_3_config, 
+                         plot_4_config, 
+                         plot_5_config
+                         ])
 
 
 
+#Define the joints that you want to import 
+model_names = measurement_model.output_names
+num_models = len(model_names)
+
+#Initial State
+initial_state_list = [0, #Phase
+                      1, #Phase_dot
+                      1.4, #ramp
+                      0, #stride
+                      ] + [0]*num_gait_fingerprints
+#Convert to numpy array
+initial_state = np.array(initial_state_list).reshape(-1,1)
+
+#Generate the initial covariance as being very low
+#TODO - double check with gray if this was the strategy that converged or not
+cov_diag = 1
+initial_state_diag = [cov_diag,cov_diag,cov_diag,cov_diag] + [cov_diag]*num_gait_fingerprints
+initial_state_covariance = np.diag(initial_state_diag)
+
+
+#Set state limits
+# upper_limits = np.array([np.inf, 1.4, 2.0, 11] + [np.inf]*num_gait_fingerprints).reshape(-1,1)
+# lower_limits = np.array([-np.inf, 0.6, 0.8, -11] + [-np.inf]*num_gait_fingerprints).reshape(-1,1)
+upper_limits = np.array([np.inf, np.inf, 2, 20] + [10]*num_gait_fingerprints).reshape(-1,1)
+lower_limits = np.array([-np.inf, 0, 0,-20] + [-10]*num_gait_fingerprints).reshape(-1,1)
 
 #Process noise
 #Phase, Phase, Dot, Stride_length, ramp, gait fingerprints
-gf_var = 1e-6
-phase_var = 0
-phase_dot_var = 8e-6
-stride_length_var = 2e-6
-ramp_var = 1e-5
-q_diag = [phase_var,phase_dot_var,stride_length_var,ramp_var,
-          gf_var,gf_var,gf_var,gf_var,gf_var]
+gf_var = 1e-15
+phase_var = 1e-20
+phase_dot_var = 5e-6
+stride_length_var = 5e-6
+ramp_var = 5e-4
+
+#I like this cal
+# gf_var = 0
+# phase_var = 1e-20
+# phase_dot_var = 5e-6
+# stride_length_var = 5e-6
+# ramp_var = 5e-4
+#r_diag = [250]*int(num_models/2) + [400]*int(num_models/2)
+
+
+q_diag = [phase_var,phase_dot_var,stride_length_var,ramp_var] + [gf_var*(100**i) for i in range (num_gait_fingerprints)]
 Q = np.diag(q_diag)
 
-
-#Create the instance for the ekf
-ekf_instace = default_ekf(Q=Q)
-
-#Get the diagonal entries of the Q matrix
-q_diag = np.diagonal(ekf_instace.Q)
-
-#Get the models to get some info from them to plot 
-models = ekf_instace.measurement_model.models
+ #Measurement covarience, Innovation
+r_diag = [250]*int(num_models/2) + [400]*int(num_models/2)
+R = np.diag(r_diag)
 
 ### Load the datasets
 
 #File relative imports
-file_location = '../../data/flattened_dataport/dataport_flattened_partial_{}.parquet'
-subject_name = 'AB09'
-filename = file_location.format(subject_name)
+# file_location = '../../data/r01_dataset/r01_Streaming_flattened_{}.parquet'
+file_location = "../../data/flattened_dataport/dataport_flattened_partial_{}.parquet"
+
+#Get the file for the corresponding subject
+filename = file_location.format(subject_model)
 print(f"Looking for {filename}")
 
 #Read in the parquet dataframe
 total_data = pd.read_parquet(filename)
-
-#Define the joints that you want to import 
-model_names = ['jointangles_hip_dot_x','jointangles_hip_x',
-                'jointangles_knee_dot_x','jointangles_knee_x',
-                'jointangles_thigh_dot_x','jointangles_thigh_x']
-
-
-#Define the output names
-output_names = ['jointmoment_hip_x', 'jointmoment_knee_x']
+print(total_data.columns)
 
 
 #Phase, Phase Dot, Ramp, Step Length, 5 gait fingerprints
 state_names = ['phase', 'phase_dot', 'stride_length', 'ramp',
-                'gf1', 'gf2','gf3', 'gf4', 'gf5']
+                'gf1', 'gf2','gf3']
 
 
 #Get the joint data to play back
 joint_data = total_data[model_names]
 
-
 #Get the ground truth from the datasets
 ground_truth_labels = ['phase','phase_dot','stride_length','ramp']
 ground_truth = total_data[ground_truth_labels]
 
+#Initiailze gait dynamic model
+d_model = GaitDynamicModel()
+
+#Initialize the EKF instance
+ekf_instance = Extended_Kalman_Filter(initial_state,initial_state_covariance, d_model, Q, measurement_model, R, 
+                                      lower_state_limit=lower_limits, upper_state_limit=upper_limits
+                                      )
+
 ############ Setup - Data Segments
 ### Setup data per section constants
 trials = 5                      #How many trials
-steps_per_trial = 10            #Steps per trial
+steps_per_trial = 25            #Steps per trial
 points_per_step = 150               
 points_per_trial = points_per_step * steps_per_trial
 experiment_point_gap = 107 * points_per_step
 #Skip x amount of steps from the start of the experiments
-skip_steps = 15
+skip_steps = 200
 skip_points = skip_steps * points_per_step
 #Make the first section very long to learn gait fingerprint
 first_section_steps = 5
@@ -165,146 +247,75 @@ multiple_step_data = np.tile(multiple_step_data, (repeat_dataset,1))
 multiple_step_ground_truth = np.tile(multiple_step_ground_truth, (repeat_dataset,1))
 
 
+#Clip the data
+upper_measurement_bound = [np.inf,np.inf,np.inf,500,500,500]
+lower_measurment_bound = [-np.inf,-np.inf,-np.inf,-500,-500,-500]
+
+multiple_step_data = np.clip(multiple_step_data,lower_measurment_bound,upper_measurement_bound)
+
 #Well really, just do all the data
-# multiple_step_data = joint_data.values
-# multiple_step_ground_truth = ground_truth.values
-# total_datapoints = multiple_step_data.shape[0]
+multiple_step_data = joint_data.values
+multiple_step_ground_truth = ground_truth.values
+total_datapoints = multiple_step_data.shape[0]
 
 #Calculate the time step based on the fact that phase_dot = dphase/dt
 #And that dphase = 150 from the fact that we are using the normalized dataset
 # dt = dt/dphase * dphase
 time_step = (np.reciprocal(multiple_step_ground_truth[:,1])*1/150).reshape(-1)
 
-#Create storage for state history
-# state_history = np.zeros((total_datapoints,len(state_names)))
-# real_measurements = np.zeros((total_datapoints, len(model_names)))
-# measurement_history = np.zeros((total_datapoints, len(model_names)))
-# output_history = np.zeros((total_datapoints, len(output_names)))
+
+### Low pass filter the velocity signals
+#Set up filter frequency response
+# order = 6
+# fs = 150
+# nyq =  0.5 * fs
+# cutoff = 70
+# normal_cutoff = cutoff / nyq
+
+# b,a = butter(order, normal_cutoff, analog=False)
+
+# multiple_step_data[:,3:] = lfilter(b, a, multiple_step_data[:,3:])
 
 
 #Get the least squared estimated gait fingerprint
-ls_gf = models[0].subjects[subject_name]['cross_model_gait_coefficients_unscaled']
+#TODO: I don't think I'm getting the correct gait fingerprint. Is it the same for all the models? 
+ls_gf = model.kmodels[0].subject_gait_fingerprint
 
 try:
     for i in range(total_datapoints):
         curr_data = multiple_step_data[i].reshape(-1,1)
-        # real_measurements[i,:] = curr_data.T
-        next_state = ekf_instace.calculate_next_estimates(time_step[i], curr_data)[0].T
-        # state_history[i,:] = next_state
-        # measurement_history[i,:] = ekf_instace.calculated_measurement_.T
-        # output_history[i,:] = ekf_instace.get_output().T
-        plot_array = np.concatenate([next_state[0,:3].reshape(-1,1),                    #phase, ramp, stride_length 
-                                     multiple_step_ground_truth[i,:3].reshape(-1,1),    #phase, ramp, stride_length from dataset
+
+        next_state = ekf_instance.calculate_next_estimates(time_step[i], curr_data)[0].T
+        
+        calculated_angles = ekf_instance.calculated_measurement_[:3]
+        calculated_speeds = ekf_instance.calculated_measurement_[3:6]
+
+        plot_array = np.concatenate([next_state[0,:3].reshape(-1,1),                    #phase, phase_dot, stride_length 
+                                     multiple_step_ground_truth[i,:3].reshape(-1,1),    #phase, phase_dot, stride_length from dataset
                                      next_state[0,3].reshape(-1,1),                     #ramp
                                      multiple_step_ground_truth[i,3].reshape(-1,1) ,    #ramp from dataset
                                      next_state[0,4:].reshape(-1,1),                    #gait fingerprints
-                                     ls_gf.reshape(-1,1)                                #gait fingerprints from least squares 
+                                     ls_gf.reshape(-1,1),                                #gait fingerprints from least squares 
+                                     curr_data[:3].reshape(-1,1),
+                                     calculated_angles.reshape(-1,1),
+                                     curr_data[3:].reshape(-1,1),
+                                     calculated_speeds.reshape(-1,1)
+
                                     ])
     
         client.send_array(plot_array)
-        client.wait_for_response()
-        print(f'{i} out of {total_datapoints}')
-
+        print(f'{i} out of {total_datapoints} state {next_state} expected state {multiple_step_ground_truth[i,:4]} expected gf {ls_gf}')
+        #sleep(0.01)
 
 except KeyboardInterrupt:
     print(f"Interrupted at step {i}")
-    # total_datapoints = i+1
-    # curr_data = curr_data[:total_datapoints,:]
-    # real_measurements = real_measurements[:total_datapoints,:]
-    # state_history = state_history[:total_datapoints,:]
-    # measurement_history = measurement_history[:total_datapoints,:]
-    # multiple_step_ground_truth = multiple_step_ground_truth[:total_datapoints,:]
-    # output_history = output_history[:total_datapoints,:]
+
     pass
 
-#old plotting    
-#print(state_history[:,0])
-#plt.plot(state_history[:,:])
-
-
-# rmse_state = [get_rmse(state_history[:,i],multiple_step_ground_truth[:,i]) for i in range(4)]
-
-# rmse_joint_angle = [get_rmse(real_measurements, measurement_history)]    
-
-# #new plotting
-# time_axis = np.arange(total_datapoints)*1/150
-
-# individual_measurements_labels = ['Measured', 'Expected']
-
-# fig,axs = plt.subplots(10,1,sharex=True)
-
-# colors = ['red', 'green', 'orange', 'blue', ]
-
-# axs[-1].set_xlabel("Time (s)")
-
-
-# #Plot measurements
-# for i in range(len(model_names)):
-#     #Plot foot angle
-#     fig.suptitle(f'Q: {q_diag}  RMSE State: {rmse_state} RMSE angles: {rmse_joint_angle}')
-#     axs[i].plot(time_axis, real_measurements[:,i])
-#     axs[i].plot(time_axis, measurement_history[:,i])
-#     axs[i].set_ylabel(f"{' '.join(model_names[i].split('_')[1:-1])}")
-#     axs[i].legend(individual_measurements_labels)
-
-# #Plot the output
-# output_index = 6
-# axs[output_index].plot(time_axis, output_history)
-# axs[output_index].set_ylabel("Torque Outputs")
-# axs[output_index].legend(output_names)
-
-
-# #Plot the gait fingerprints
-# gait_fingerprint_index = 7
-# custom_cycler = (cycler(color=['b', 'g', 'r', 'c', 'm']))
-# axs[gait_fingerprint_index].set_prop_cycle(custom_cycler)    
-
-# ls_gf = models[0].subjects[subject_name]['cross_model_gait_coefficients_unscaled']
-# desired_gf = np.repeat(ls_gf,time_axis.shape[0], axis=1).T
-# axs[gait_fingerprint_index].plot(time_axis, desired_gf, ":", lw=2)
-# axs[gait_fingerprint_index].plot(time_axis, state_history[:,4:], lw=2)
-# axs[gait_fingerprint_index].set_ylabel("Gait Fingerprints")
-# axs[gait_fingerprint_index].legend([f'gf{i}' for i in range(1,6)])
-
-
-# #Plot the estimated state and ground truth state
-# ground_truth_index = 8
-# custom_cycler = (cycler(color=['b', 'g', 'r']))
-# axs[ground_truth_index].set_prop_cycle(custom_cycler)  
-
-# axs[ground_truth_index].plot(time_axis, state_history[:,:3])
-# axs[ground_truth_index].set_ylabel("Estimated State")
-# axs[ground_truth_index].plot(time_axis, multiple_step_ground_truth[:,:3], 
-#             linestyle = '--')
-# axs[ground_truth_index].set_ylabel("Ground Truth")
-# axs[ground_truth_index].legend(state_names[:3] + ground_truth_labels[:3])
-
-
-
-# #Plot the ground truth states
-# ramp_index = 9
-# axs[ramp_index].plot(time_axis, state_history[:,3])
-# axs[ramp_index].plot(time_axis, multiple_step_ground_truth[:,3])
-# axs[ramp_index].set_ylabel("Ramp")
-# axs[ramp_index].legend(["Estimated Ramp", "Ground Truth Ramp"])
-
-# plt.show()
 
 
 
 if __name__=='__main__':
-    pass
-    # import cProfile, pstats
-    # profiler = cProfile.Profile()
-    # profiler.enable()
+
     simulate_ekf()
-    # profiler.disable()
-    # stats = pstats.Stats(profiler).sort_stats('cumtime')
-    # stats.print_stats()
-    # stats.dump_stats('/content/export-data')
-
-
-
-    #%matplotlib qt
-    #%load_ext snakeviz
-    #%snakeviz main()
+    

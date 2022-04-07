@@ -4,6 +4,9 @@ import numpy as np
 class GaitDynamicModel():
 
     def __init__(self):
+
+        #Small increase in phase dot every time step
+        self.phase_dot_scale = 1
         pass
 
     #The gait dynamics are an integrator for phase that take into consideration 
@@ -18,7 +21,7 @@ class GaitDynamicModel():
 
         #Add the integrator corresponding to phase dot
         jacobean[0,1] = time_step
-
+        jacobean[1,1] = self.phase_dot_scale
         return jacobean
 
     #This is a linar function based on the jacobean its pretty straighforward 
@@ -33,8 +36,12 @@ class GaitDynamicModel():
         if (current_state[0,0] >= 1.0):
             current_state[0,0] -= integer_part
         
+        #Prevent negative phase_dot
         #This can occur with negative phase dot    
         if (current_state[0,0] < 0.0):
             current_state[0,0] += integer_part + 1
+
+        #Small phase_dot increase per state
+        current_state[1,0] = current_state[1,0]*self.phase_dot_scale
         
         return current_state
