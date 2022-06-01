@@ -22,16 +22,6 @@ class Basis:
     def evaluate(self,x):
         pass
 
-    #Need to implement the derivative of this also
-    def evaluate_derivative(self,x):
-        pass
-
-    def evaluate_conditional(self,x,apply_derivative,num_derivatives=1):
-        if(apply_derivative == True):
-            return self.evaluate_derivative(x,num_derivatives)
-        else:
-            return self.evaluate(x)
-
 
 ##Define classes that will be used to calculate kronecker products in real time
 
@@ -41,6 +31,7 @@ class PolynomialBasis(Basis):
     def __init__(self, n, var_name):
         Basis.__init__(self,n,var_name)
         self.size = n
+        self.name = "Polynomial"
 
     #This function will evaluate the model at the given x value
     def evaluate(self,x):
@@ -76,6 +67,7 @@ class FourierBasis(Basis):
 
         Basis.__init__(self, n, var_name)
         self.size = 2*n+1
+        self.name = "Fourier"
 
     #This function will evaluate the model at the given x value
     def evaluate(self,x):
@@ -97,6 +89,7 @@ class LegendreBasis(Basis):
     def __init__(self, n, var_name):
         Basis.__init__(self, n, var_name)
         self.size = n
+        self.name = "Legendre"
 
     def evaluate(self,x):
         return np.polynomial.legendre.legvander(x, self.n-1)
@@ -108,7 +101,8 @@ class ChebyshevBasis(Basis):
     def __init__(self, n, var_name):
         Basis.__init__(self, n, var_name)
         self.size = n
-    
+        self.name = "Chebyshev"
+
     def evaluate(self, x):
         return np.polynomial.chebyshev.chebvander(x, self.n-1)
 
@@ -118,6 +112,7 @@ class HermiteBasis(Basis):
     def __init__(self, n, var_name):
         Basis.__init__(self, n, var_name)
         self.size = n
+        self.name = "Hermite"
 
     def evaluate(self,x):
         return np.polynomial.hermite_e.hermevander(x, self.n-1)

@@ -40,7 +40,9 @@ gf_np = np.linspace(-10,10,150)
 input_list = [phase_np, [phase_dot], [stride_length], [ramp]] + [[0]]*(num_gait_fingerprints-1)
 
 #Create all the permutations of the inputs based on the number of gaint fingerprints
-input_data_list = [input_list[:4+i] + [gf_np] + input_list[4+i:] for i in range(num_gait_fingerprints)]
+gf_list = range(num_gait_fingerprints)
+
+input_data_list = [input_list[:4+i] + [gf_np] + input_list[4+i:] for i in gf_list]
 data_vary_list = [np.stack(np.meshgrid(*data), -1).reshape(-1,4+num_gait_fingerprints) for data in input_data_list]
 
 #Run the model 
@@ -50,12 +52,13 @@ model_output_vary_gf_list = [model.evaluate(data_vary) for data_vary in data_var
 xx, yy = np.meshgrid(phase_np, gf_np)
 
 # Create subplots for every joint and every gait fingerprint
-rows = num_gait_fingerprints
-columns = 3
+rows = len(gf_list)
+columns = len(model.output_names)
 
 fig = make_subplots(
     rows=rows, cols=columns,
-    specs=[[{'type':'surface'}]*3]*rows)
+    specs=[[{'type':'surface'}]*columns]*rows,
+    subplot_titles=[i+f"gf {gf_list[0]}" for i in model.output_names])
 
 
 for gf_index,model_output_data in enumerate(model_output_vary_gf_list):
@@ -90,5 +93,9 @@ for gf_index,model_output_data in enumerate(model_output_vary_gf_list):
             ),
             row = gf_index+1, col = joint_index+1,
         )
+
+        fig.update_xaxes(title_text="phase", row=gf_index+1, col=joint_index+1)
+        fig.update_yaxes(title_text="gait fingerprint", row=gf_index+1, col=joint_index+1)
+
 
 fig.show()

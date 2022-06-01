@@ -353,9 +353,8 @@ def flatten_r01_normalized():
 #     new_file_name = mat + ".parquet"
 #     eng.parquetwrite(new_file_name,mat_file['data'],nargout=0)
     
-#%%
+
 if __name__ == '__main__':
-    pass
     flatten_r01_normalized()
     # determine_different_strides()
 

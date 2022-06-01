@@ -20,7 +20,7 @@ class KModelFitter():
     #TODO: add numpy implementation of fit_data
 
     def fit_data(self,k_model : KroneckerModel,data : pd.DataFrame \
-                     ,output_name: str,  data_splits : int = 50): 
+                     ,output_name: str,  data_splits : int = 50, l2_lambda: float = 0.0): 
         """
         This is the least squares implementation to fit data 
         to a specific model
@@ -33,6 +33,7 @@ class KModelFitter():
         output_name -- column in data that will be used as the 'y' data
         data_splits -- scalar that indicates how many times to sub-divide the data.
                         Small values are make the fit run faster, but use more memory.
+        l2_lambda = lambda in l2 regularization
         Returns:
         model_fit -- best fit of the model to the data with 
                      shape(1,k_model_output_size)
@@ -46,8 +47,8 @@ class KModelFitter():
         RTR, RTy, yTR, yTy = self.calculate_regressor(k_model, data, output_name, data_splits)
     
         #Calculate the least squares fit
-        # x = (R^T R)^-1 R^T y
-        x = np.linalg.solve(RTR,RTy).T
+        # x = (R^T R - lambda*I)^-1 R^T y
+        x = np.linalg.solve(RTR + l2_lambda * np.eye(RTR.shape[0]),RTy).T
 
         #Debug shapes
         #print(f"RTR: {RTR.shape} yTR {yTR.shape} RTy: {RTy.shape} yTy: {yTy.shape} x {x.shape}")

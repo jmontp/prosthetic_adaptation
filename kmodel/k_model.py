@@ -7,12 +7,13 @@ that takes different function bases and combines them
 #Common imports
 import pandas as pd
 import numpy as np
-
+from kmodel.function_bases import Basis
+from typing import List
 
 class KroneckerModel():
 
 
-    def __init__(self,basis_list):
+    def __init__(self,basis_list: List[Basis]):
         """
         Initialize the object 
 

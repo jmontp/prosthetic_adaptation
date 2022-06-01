@@ -10,3 +10,5 @@ model_fitting/*.pickle
 *.svg
 *.png
 *.egg-info
+scripts/useful_scripts/media/*
+scripts/useful_scripts/Figures/*

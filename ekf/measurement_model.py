@@ -36,14 +36,19 @@ class MeasurementModel():
 
 
 
-    def evaluate_h_func(self,current_state):
+    def evaluate_h_func(self,current_state:np.ndarray,
+                        use_subject_average_fit:bool = False,
+                        use_least_squares_gf:bool = False):
         """
         Evaluate the measurement function
 
         Keyword Arguments
         current_state: current state of the extended kalman filter
                        shape(num_states, 1)
-        
+        use_subject_average_fit: determines if the subject average fit is used in the 
+                                 evaluation process of the measurement model
+        use_least_squares_gf: determines if the least squares gf fit is used in the 
+                                 evaluation process of the measurement model
         Returns
         measurement_value: Value of the measurement function
                            shape(num_outputs, 1)
@@ -55,11 +60,15 @@ class MeasurementModel():
         # ekf inputs column vectors
         # therefore, transpose both input and output
 
-        output = self.personal_model.evaluate(current_state.T)
+        output = self.personal_model.evaluate(current_state.T, 
+                                              use_average_fit=use_subject_average_fit,
+                                              use_personalized_fit=use_least_squares_gf)
 
         if (self.calculcate_output_derivative == True):
             #Calculate the time derivative
-            output_time_derivative = self.output_time_derivative(current_state, output)
+            output_time_derivative = self.output_time_derivative(current_state, output, 
+                                                                 use_subject_average_fit,
+                                                                 use_least_squares_gf)
             
             #Append to the output
             output = np.concatenate([output,output_time_derivative], axis=1)
@@ -68,7 +77,9 @@ class MeasurementModel():
 
 
 
-    def evaluate_dh_func(self,current_state):
+    def evaluate_dh_func(self,current_state:np.ndarray,
+                        use_subject_average_fit:bool = False,
+                        use_least_squares_gf:bool = False):
         """
         Calculate the derivative at this current point in time
 
@@ -77,17 +88,22 @@ class MeasurementModel():
         Keyword Arguments
         current_state: current state of the extended kalman filter
                        shape(num_states, 1)
-        
+        use_subject_average_fit: determines if the subject average fit is used in the 
+                                 evaluation process of the measurement model
+        use_least_squares_gf: determines if the least squares gf fit is used in the 
+                                 evaluation process of the measurement model
         Returns
         measurement_value: Value of the derivative of the measurement function
                            shape(num_outputs, 1)
         """
         #Use numerical method to calculate the jacobean 
-        result = self.numerical_jacobean(current_state)
+        result = self.numerical_jacobean(current_state,use_subject_average_fit,use_least_squares_gf)
 
         return result
 
-    def numerical_jacobean(self, current_state):
+    def numerical_jacobean(self, current_state:np.ndarray,
+                        use_subject_average_fit:bool = False,
+                        use_least_squares_gf:bool = False):
 
         """
         Numerical differentiation algorithm
@@ -95,7 +111,10 @@ class MeasurementModel():
         Keyword Arguments
         current_state: current state of the extended kalman filter
                        shape(num_states, 1)
-        
+        use_subject_average_fit: determines if the subject average fit is used in the 
+                                 evaluation process of the measurement model
+        use_least_squares_gf: determines if the least squares gf fit is used in the 
+                                 evaluation process of the measurement model
         Returns
         measurement_value: Value of the derivative of the measurement function
                            shape(num_outputs, 1)
@@ -115,7 +134,9 @@ class MeasurementModel():
         
         #We are going to fill it element-wise
         #col represents the current state
-        f_state = self.evaluate_h_func(current_state)
+        f_state = self.evaluate_h_func(current_state,
+                                       use_subject_average_fit,
+                                       use_least_squares_gf)
 
         #Create buffer to store the result
         state_plus_delta = current_state.copy()
@@ -130,7 +151,9 @@ class MeasurementModel():
                 state_plus_delta[col-1,0] -= self.delta
 
             #Evaluate the model and extract it 
-            f_delta = self.evaluate_h_func(state_plus_delta)
+            f_delta = self.evaluate_h_func(state_plus_delta,
+                                            use_subject_average_fit,
+                                            use_least_squares_gf)
 
             #Get the derivative for the column
             manual_derivative[:,col] = ((f_delta-f_state)/(self.delta)).T
@@ -140,9 +163,11 @@ class MeasurementModel():
 
 
     def output_time_derivative(self, current_state: np.ndarray,
-                               eval_at_current_state: np.ndarray):
+                               eval_at_current_state: np.ndarray,
+                               use_subject_average_fit:bool=False,
+                               use_least_squares_gf:bool = False):
         """
-        This function will get the time derivative of the output functions
+        This function will get the time derivative of the output functions 
 
         Keyword Arguments: 
         current_state: Current state of the extended kalman filter
@@ -163,7 +188,9 @@ class MeasurementModel():
         delta_state = current_state + delta_vector
         
         #Get the evaluation at the new phase
-        eval_at_delta_state = self.personal_model.evaluate(delta_state.T)
+        eval_at_delta_state = self.personal_model.evaluate(delta_state.T, 
+                                                           use_average_fit=use_subject_average_fit,
+                                                           use_personalized_fit=use_least_squares_gf)
 
         #Calculate the phase derivative
         phase_derivative = (eval_at_delta_state - eval_at_current_state)/self.delta

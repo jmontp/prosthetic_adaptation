@@ -87,7 +87,9 @@ class PersonalMeasurementFunction:
             
             #Set the corresponding column
             #Reshape to make sure numpy broadcasting rules hold
-            output_buffer[:,[i]] = kmodel.evaluate(input_data, use_personalized_fit, use_average_fit).reshape(num_datapoints,1)
+            output_buffer[:,[i]] = kmodel.evaluate(input_data, 
+                                                   use_personalized_fit = use_personalized_fit, 
+                                                   use_average_fit = use_average_fit).reshape(num_datapoints,1)
 
         return output_buffer
 

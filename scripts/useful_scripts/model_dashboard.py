@@ -23,7 +23,7 @@ from kmodel.personalized_model_factory import PersonalizedKModelFactory
 #Import the personalized model 
 factory = PersonalizedKModelFactory()
 
-subject_model = "AB01"
+subject_model = "AB10"
 
 model_dir = f'../../data/kronecker_models/left_one_out_model_{subject_model}.pickle'
 
@@ -91,7 +91,7 @@ def create_phase_dot_slider():
     return state_slider("Phase Dot", 0.0,2.0,0.1,0.5)
   
 def create_stride_length_slider():
-   return state_slider("Stride Length",0.0,20.0,0.2,1.4)
+   return state_slider("Stride Length",0.0,2.0,0.1,1.4)
 
 def create_ramp_slider():
     return state_slider("Ramp", -200.0,200.0,2.0,0.0)
@@ -110,7 +110,17 @@ callback_outputs = [Output("model-plot-div","children")]
 inputs = callback_input,
 output = callback_outputs
 )
-def plotter_callback(gf1,gf2,gf3,phase_dot,ramp,stride_length):
+def plotter_callback(*input):
+
+    global num_gf
+
+    gf = input[:num_gf]
+    
+    phase_dot = input[num_gf]
+    
+    ramp = input[num_gf+1]
+    
+    stride_length = input[num_gf+2]
 
     #Define the number of points to plot per step
     points_per_step = 150
@@ -127,10 +137,8 @@ def plotter_callback(gf1,gf2,gf3,phase_dot,ramp,stride_length):
     #Create an array for the  samples
     states = np.array([phase_dot,
                        stride_length,
-                       ramp,
-                       gf1,
-                       gf2,
-                       gf3]).reshape(1,-1)
+                       #ramp,
+                       *gf]).reshape(1,-1)
 
     #Concatenate the phase to all the variables (e.g. everything but phase will be fixed)
     total_states = np.concatenate((phase,np.tile(states,(points_per_step,1))), axis=1)
@@ -172,8 +180,9 @@ app.layout = dbc.Container([
                 html.H1(children='Gait Fingerprints'),
 
 
-                html.Div(children='''
-                    Plot gait paths based on the gait fingerprints that you have right now
+                html.Div(children=f'''
+                    Plot gait paths based on the gait fingerprints that you have right now 
+                    ls gf {model.kmodels[0].subject_gait_fingerprint}
                 '''),
                 html.Br(),
                 create_phase_dot_slider(),

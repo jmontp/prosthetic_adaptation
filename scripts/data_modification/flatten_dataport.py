@@ -74,7 +74,8 @@ def determine_zero_data_strides():
                     if(num_digits == 0):
                         bad_strides += 1
                         if(row_number+1 != total_rows and "forceplate" not in joint):
-                            print(subject + " " + joint + " dataset " + trial_name + " " + str(num_dataset) + "/" + str(total_datasets) + " bad row: " + str(row_number + 1) + "/" + str(total_rows))
+                            #print(subject + " " + joint + " dataset " + trial_name + " " + str(num_dataset) + "/" + str(total_datasets) + " bad row: " + str(row_number + 1) + "/" + str(total_rows))
+                            pass
                     sum += 1
             #print(subject + " " + joint + " total bad strides = " + str(bad_strides) + " Total strides: " + str(sum))
 
@@ -176,7 +177,7 @@ def determine_different_strides():
 def quick_flatten_dataport():
     pass
     # %%
-    file_name = '../local-storage/InclineExperiment.mat'
+    file_name = '../../data/InclineExperiment.mat'
     h5py_file = h5py.File(file_name)['Gaitcycle']
 
     # Iterate through all the subjects, make a file per subject to keep it RAM bound
@@ -190,7 +191,7 @@ def quick_flatten_dataport():
         print("Flattening subject: " + subject)
         # Initialize variables for the subject
         data = h5py_file[subject]
-        save_name = '../local-storage/test/dataport_flattened_partial_{}.parquet'.format(
+        save_name = '../../data/flattened_dataport/dataport_flattened_partial_{}.parquet'.format(
             subject)
         # Store all the end points
         columns_to_endpoint_list = {}
@@ -321,9 +322,9 @@ def quick_flatten_dataport():
         df['phase'] = np.tile(phase, int(df.shape[0]/150))
         df['phase_dot'] = np.concatenate(phase_dot_list, axis=0)
         df['stride_length'] = np.concatenate(stride_length_list, axis=0)
-        print("Number of columns: " + str(len(df.columns)))
-        print("Columns: " + df.columns)
-        print("strides to length " + str([(strides,len(dataset.columns)) for strides, dataset in strides_to_dataframes_dict.items()]))
+        # print("Number of columns: " + str(len(df.columns)))
+        # print("Columns: " + df.columns)
+        # print("strides to length " + str([(strides,len(dataset.columns)) for strides, dataset in strides_to_dataframes_dict.items()]))
         # Comment out to not save
         df.to_parquet(save_name)
 
@@ -332,19 +333,30 @@ def quick_flatten_dataport():
 # %%
 
 
+def remove_outliers(data,joint,max_val,min=None):
+    if min is not None:
+        filter_mask = (data[joint] > max_val) | (data[joint] < -max_val)
+    else:
+        filter_mask = (data[joint] > max_val)
+
+    remove_index = data.index[filter_mask].to_list()
+    remove_index_step_set = set([int(index/150) for index in remove_index])
+    remove_index_locations = [j for i in remove_index_step_set for j in list(range(i*150,(i+1)*150))]
+    data.drop(remove_index_locations, inplace=True)
+
 def add_global_shank_angle():
     pass
 # %%
     # #Get the subjects
     subjects = [
-        ('AB10', '../local-storage/test/dataport_flattened_partial_AB10.parquet')]
+        ('AB10', '../../data/flattened_dataport/dataport_flattened_partial_AB10.parquet')]
     for i in range(1, 10):
         subjects.append(
-            ('AB0'+str(i), '../local-storage/test/dataport_flattened_partial_AB0'+str(i)+'.parquet'))
+            ('AB0'+str(i), '../../data/flattened_dataport/dataport_flattened_partial_AB0'+str(i)+'.parquet'))
 
     for subject in subjects:
         df = pd.read_parquet(subject[1])
-        print(df.columns)
+        # print(df.columns)
 
         # Create the shank angles based on foot and ankle
 
@@ -355,6 +367,22 @@ def add_global_shank_angle():
             df['jointangles_ankle_y']
         df['jointangles_shank_z'] = df['jointangles_foot_z'] + \
             df['jointangles_ankle_z']
+
+        # Calculate the derivative of hip dot manually
+        anles_cutoff = df['jointangles_hip_x'].values[:-1]
+        angles_future = df['jointangles_hip_x'].values[1:]
+        phase_rate = df['phase_dot'].values[:-1]
+        measured_foot_derivative = (
+            angles_future-anles_cutoff)*(phase_rate)*150
+        measured_foot_derivative = np.append(measured_foot_derivative, 0)
+        df['jointangles_hip_dot_x'] = measured_foot_derivative
+        
+        # #Calculate thigh angle offset based on the hip angle velocity being near zero
+        # mask = (df['phase'] > 0.40) & (df['phase'] < 0.65) & (df['jointangles_hip_dot_x'].abs() < 2)
+        # hip_angle_offset = df[mask]['jointangles_hip_x'].mean()
+        # df['jointangles_hip_x'] = df['jointangles_hip_x'] - hip_angle_offset
+        #Subtract the mean value from the pelvis
+        # df['jointangles_pelvis_x'] = df['jointangles_pelvis_x'] - df['jointangles_pelvis_x'].mean()
 
         # Create the thigh angle based on pelvis and ip
         df['jointangles_thigh_x'] = df['jointangles_pelvis_x'] + \
@@ -389,14 +417,6 @@ def add_global_shank_angle():
         measured_foot_derivative = np.append(measured_foot_derivative, 0)
         df['jointangles_knee_dot_x'] = measured_foot_derivative
 
-        # Calculate the derivative of hip dot manually
-        anles_cutoff = df['jointangles_hip_x'].values[:-1]
-        angles_future = df['jointangles_hip_x'].values[1:]
-        measured_foot_derivative = (
-            angles_future-anles_cutoff)*(phase_rate)*150
-        measured_foot_derivative = np.append(measured_foot_derivative, 0)
-        df['jointangles_hip_dot_x'] = measured_foot_derivative
-
         # Calculate the derivative of thigh dot manually
         anles_cutoff = df['jointangles_thigh_x'].values[:-1]
         angles_future = df['jointangles_thigh_x'].values[1:]
@@ -404,6 +424,39 @@ def add_global_shank_angle():
             angles_future-anles_cutoff)*(phase_rate)*150
         measured_foot_derivative = np.append(measured_foot_derivative, 0)
         df['jointangles_thigh_dot_x'] = measured_foot_derivative
+
+         # Calculate the derivative of ankle dot manually
+        anles_cutoff = df['jointangles_ankle_x'].values[:-1]
+        angles_future = df['jointangles_ankle_x'].values[1:]
+        measured_foot_derivative = (
+            angles_future-anles_cutoff)*(phase_rate)*150
+        measured_foot_derivative = np.append(measured_foot_derivative, 0)
+        df['jointangles_ankle_dot_x'] = measured_foot_derivative
+
+
+        #remove outliers
+        remove_outliers(df,'jointangles_foot_dot_x',1000,-1000)
+        remove_outliers(df,'jointangles_hip_dot_x',390,-170)
+        remove_outliers(df,'jointangles_shank_dot_x',1000,-1000)
+        remove_outliers(df,'jointangles_foot_x',  -0.2)
+        remove_outliers(df,'jointangles_shank_x',-0.2)
+
+
+        #Offset the foot angles by average phase in midstance at zero ramp
+        #We are assuming mid stance is 15-30 phase
+        # foot_offset_mask = (df['ramp']==0) & (df['phase'] > 0.15) & (df['phase'] < 0.36)
+        # average_foot_angle = df[foot_offset_mask]['jointangles_foot_x'].mean()
+        # df['jointangles_foot_x'] = df['jointangles_foot_x'] - average_foot_angle
+        # df['jointangles_shank_x'] = df['jointangles_shank_x'] - average_foot_angle
+        # df['jointangles_thigh_x'] = df['jointangles_thigh_x'] - average_foot_angle
+
+        #Doing this after the fact since the plots showed that no actual value was over 170 after substracting the mean value
+        remove_outliers(df,'jointangles_thigh_x',170)
+
+
+        speed_list = [0.8,1.0,1.2]
+        find_min_stride = lambda dataset: min([((dataset.speed == speed) & (dataset.ramp==0.0)).sum() for speed in speed_list])
+        print(f"{subject[0]} min strides {find_min_stride(df)/150}")
 
         df.to_parquet(subject[1])
 

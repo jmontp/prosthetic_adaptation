@@ -15,7 +15,9 @@ class PersonalKModel():
 
     def __init__(self, kronecker_model: KroneckerModel, personalization_map: np.ndarray, average_fit: np.ndarray, output_name: str,
                  gait_fingerprint: np.ndarray = None, 
-                 subject_name: np.ndarray = None):
+                 subject_name: np.ndarray = None,
+                 average_model_residual:np.ndarray = None,
+                 l2_lambda:float = None):
         """
         Initialize the PersonalKModel Object
 
@@ -28,6 +30,8 @@ class PersonalKModel():
         gait_fingerprint -- an individual's optimized gait fingerprint with 
                             shape(1,model_output_size)
         subject_name -- string of the subject name
+
+        average_model_residual -- stores the average model residual across different subjects
         """
         #Get the model and the amount of functions
         self.model = kronecker_model
@@ -47,6 +51,12 @@ class PersonalKModel():
 
         #Keep the output name
         self.output_name = output_name
+
+        #Store the output rmse
+        self.avg_model_residual = average_model_residual
+
+        #Store the l2 lambda that was used to generate this model
+        self.l2_lambda = l2_lambda
 
     def get_subject_name(self):
         """
@@ -112,7 +122,7 @@ class PersonalKModel():
 
             #Return error if the object was not initialized 
             if(self.subject_gait_fingerprint is None):
-                return TypeError("Object was not initialized \
+                raise TypeError("Object was not initialized \
                             with a personalized_fit parameter")
 
             gait_fingerprints = self.subject_gait_fingerprint

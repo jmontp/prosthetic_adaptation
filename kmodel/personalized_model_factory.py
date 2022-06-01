@@ -36,7 +36,9 @@ class PersonalizedKModelFactory:
                                       num_pca_vectors: int = None, 
                                       keep_subject_fit: str = None,
                                       left_out_subject: Union[str, List[str]] = None,
-                                      vanilla_pca: Boolean = False):
+                                      vanilla_pca: Boolean = False,
+                                      l2_lambda: float = 0.0,
+                                      leave_out_model_name: str = None):
         """
         This function will calculate the personalization map 
         and return a personalized k_model object
@@ -48,13 +50,15 @@ class PersonalizedKModelFactory:
         num_pca_vectors -- Int, The amount of pca vectors to use. If not, 95% will be used
         keep_subject_fit -- string, the subject name that you want to set the personalized fit model to 
         left_out_subject -- this(these) subject(s) will not be included in the personalization map calculation
+        l2_lambda -- regularized least squares lambda value
         
         Returns
         p_model -- personalized kronecker model        
         fit_info -- the fit information per subject
         """
         
-        #If we get a kronecker model, convert it into a list just to be consistent
+        #If we get a kronecker model (e.g. just one output), 
+        # convert it into a list just to be consistent through the code
         if isinstance(output_name, str) == True:
             output_name = [output_name]
         
@@ -63,12 +67,15 @@ class PersonalizedKModelFactory:
         XI_average_list = []
         G_list = []
 
+        #Create an output to average model rmse error dictionary
+        avg_rmse_per_output = {}
+
         #### Calculate the fit matrix
         #Generate the fitter object
         fitter = KModelFitter()
 
         #Outer loop is through the different output functions
-        for output in output_name: 
+        for output_i,output in enumerate(output_name): 
 
             #Initialize the aggregate fit matrix
             XI_output_list = []
@@ -84,9 +91,15 @@ class PersonalizedKModelFactory:
                 #Skip if the subject name is in the left out pool
                 if subject_name in left_out_subject:
                     continue
+                
+                #Get the appropriate l2 regularization
+                if(isinstance(l2_lambda,list)):
+                    curr_l2_lambda = l2_lambda[output_i]
+                else:
+                    curr_l2_lambda = l2_lambda
 
                 #Get the subject fit
-                subject_fit, (fit_rmse, RTR, num_datapoints) = fitter.fit_data(k_model, subject_data, output)
+                subject_fit, (fit_rmse, RTR, num_datapoints) = fitter.fit_data(k_model, subject_data, output,l2_lambda=curr_l2_lambda)
 
                 #Add it to the list of fits
                 XI_output_list.append(subject_fit)
@@ -99,8 +112,10 @@ class PersonalizedKModelFactory:
                 total_rmse_list.append(fit_rmse)
             
             #Print and report the rmse 
-            print(f"Average RMSE for {output} is {np.mean(total_rmse_list)}")
-            
+            avg_rmse = np.mean(total_rmse_list)
+            print(f"Average RMSE for {output} is {avg_rmse}")
+            avg_rmse_per_output[output] = avg_rmse
+
             #Convert the list into a numpy array
             XI = np.concatenate(XI_output_list,axis=0)
 
@@ -136,8 +151,9 @@ class PersonalizedKModelFactory:
         pca.fit(XI_0_aggregate) 
 
         #Print out variance explained for the fit
-        print(f"Explained variance {pca.explained_variance_}")
-
+        print(f"Explained variance:")
+        variance_explained = np.cumsum(pca.explained_variance_ratio_)
+        print(f"{left_out_subject} & " + ' & '.join([f"{variance_explained[i]:.2}\%" for i in range(3)]) + "\\\\")
         #Determine the number of pca components if it is not supplied
         if(num_pca_vectors is None):
             num_pca_vectors = np.count_nonzero(pca.explained_variance_ratio_ <= 0.95)
@@ -149,43 +165,106 @@ class PersonalizedKModelFactory:
         if(vanilla_pca == False):
             pmap_aggregate = self._convert_from_orthonormal(pmap_aggregate, G_list)
 
+
+        ##Calculate the gait fingerprints for the keep subject
+        #Initialize to none in case there is no keep subject
+        gait_fingerprint = None
+
+        #Get the dataset for the left out subject
+        for subject_name,subject_data in subject_data_list:
+            
+            #If the subject name is in the list, calculate the gait fingerprint
+            if subject_name == keep_subject_fit:
+                
+                #Initialize accumulator matrices
+                RTR_prime_total = 0
+                RTy_prime_total = 0
+
+                for i,output in enumerate(output_name):
+
+                    #Get the pmap and average fit for this model
+                    pmap = pmap_aggregate[:,k_model_output_size*i:k_model_output_size*(i+1)]
+                    xi_avg = XI_average_list[i]
+                    
+                    #Get the regressor matrix for this model
+                    RTR_prime_j, RTy_prime_j = self._calculate_gait_fingerprint_regressor(k_model, subject_data, 
+                                                                                          output, pmap, xi_avg)
+                    #Add tho the solution matrix
+                    RTR_prime_total += RTR_prime_j
+                    RTy_prime_total += RTy_prime_j
+                
+                #Calculate the gait fingerprint
+                gait_fingerprint = np.linalg.solve(RTR_prime_total, RTy_prime_total).T
+        
+
+        ##Initialize all the kmodels for each joint
         #Create a list for the personal k models
         k_model_list = []
-
-        #TODO: Update the pca fit for 
-        #Calculate the gait fingerprint per model
+        
+        #Iterate through all the otuputs to initialize the corresponding PersonalKModel
         for i, output in enumerate(output_name):
             
+            #If we want to exclude this output, leave it out
+            if leave_out_model_name is not None and output in leave_out_model_name:
+                continue
+
             #Get the pmap and average fit for this model
             pmap = pmap_aggregate[:,k_model_output_size*i:k_model_output_size*(i+1)]
             xi_avg = XI_average_list[i]
 
-            #Calculate the personalization map
-            gait_fingerprint = None
-
-            #Get the dataset for the left out subject
-            for subject_name,subject_data in subject_data_list:
-                
-                #If the subject name is in the list, calculate the gait fingerprint
-                if subject_name == keep_subject_fit:
-                    gait_fingerprint = self._calculate_gait_fingerprint(k_model, subject_data, 
-                                                                        output, pmap, xi_avg)
-
             #### Initialize and return the P model
-            personalized_k_model = PersonalKModel(k_model,pmap,xi_avg,output, 
-                                                  gait_fingerprint, keep_subject_fit)
+            personalized_k_model = PersonalKModel(kronecker_model = k_model,
+                                                  personalization_map = pmap,average_fit = xi_avg,
+                                                  output_name = output, 
+                                                  gait_fingerprint = gait_fingerprint,
+                                                  subject_name = keep_subject_fit,
+                                                  average_model_residual=avg_rmse_per_output[output],
+                                                  l2_lambda=l2_lambda)
             
             #Append to the model output list
             k_model_list.append(personalized_k_model)
 
+        output_name_copy = list(output_name)
+
+        if leave_out_model_name is not None: 
+            #Create copy to remove leave out name
+            output_name_copy.remove(leave_out_model_name)
+
         #Create the personalized measurement model
-        personal_model_list = PersonalMeasurementFunction(k_model_list, output_name)
-
-        return personal_model_list
+        personal_model_func = PersonalMeasurementFunction(k_model_list, output_name_copy)
 
 
-    def _calculate_gait_fingerprint(self,k_model: KroneckerModel, data: list, output_name: str,
-                                    pmap: np.ndarray, average_fit: np.ndarray): 
+        #Same process for all the models that are left out
+        k_model_leave_out_list = []
+
+        #Iterate through all the otuputs to initialize the corresponding PersonalKModel
+        for i, output in enumerate(output_name):
+            
+            #If we want to exclude this output, leave it out
+            if leave_out_model_name is not None and output in leave_out_model_name:
+                continue
+
+            #Get the pmap and average fit for this model
+            pmap = pmap_aggregate[:,k_model_output_size*i:k_model_output_size*(i+1)]
+            xi_avg = XI_average_list[i]
+
+            #### Initialize and return the P model
+            personalized_k_model = PersonalKModel(k_model,pmap,xi_avg,output, 
+                                                  gait_fingerprint, keep_subject_fit,
+                                                  average_model_residual=avg_rmse_per_output[output],
+                                                  l2_lambda=l2_lambda)
+            
+            #Append to the model output list
+            k_model_leave_out_list.append(personalized_k_model)
+
+        #Create the personalized measurement model
+        leave_out_model_func = PersonalMeasurementFunction(k_model_leave_out_list, leave_out_model_name)
+
+        return personal_model_func, leave_out_model_func
+
+
+    def _calculate_gait_fingerprint_regressor(self,k_model: KroneckerModel, data: list, output_name: str,
+                                              pmap: np.ndarray, average_fit: np.ndarray): 
         """
         This function will calcualte the gait fingerprint fit based on the previous models
 
@@ -197,23 +276,24 @@ class PersonalizedKModelFactory:
         output_name -- column in data that will be used as the 'y' data
 
         Returns:
-        personalization_map -- numpy array for the gaint fingerprints
+        RTR_prime -- gait fingerprint regressor matrix
+        RTy_prime -- gait fingerprint regressor matrix
         """
 
         #Create a model fitter object
         data_fitter = KModelFitter()
 
         #Get regression matrices
-        RTR, RTy, _, _ = data_fitter.calculate_regressor(k_model, data, output_name)
+        RTR, RTy, yTR, yTy = data_fitter.calculate_regressor(k_model, data, output_name)
         
         #Use the personalization map to calculate the components of the least squares equation
         RTR_prime = (pmap @ RTR @ pmap.T)
         RTy_prime = (pmap @ RTy) - (pmap @ RTR @ average_fit.T)
+        yTR_prime = RTy_prime.T
+        yTy_prime = yTy - yTR @ average_fit.T - average_fit @ RTy - average_fit @ RTR @ average_fit.T
 
-        #Calculate the gait fingerprint
-        gait_fingerprint = np.linalg.solve(RTR_prime, RTy_prime).T
 
-        return gait_fingerprint
+        return RTR_prime, RTy_prime
 
     def _convert_to_orthonormal(self, XI_0_np: np.ndarray, G_list:List[np.ndarray]) -> np.ndarray:
         """
