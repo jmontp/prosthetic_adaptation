@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 #%%
 #Standard Imports
+from calendar import c
 import pandas as pd
 import numpy as np
 
@@ -31,7 +32,7 @@ def phase_dist(phase_a, phase_b):
 
 def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R, 
                 state_lower_limit, state_upper_limit, 
-                use_subject_average=False,use_ls_gf = False,
+                use_subject_average=False,use_ls_gf = False, calculate_gf_after_step=False,
                 plot_local=False):
 
     #Import the personalized model 
@@ -44,7 +45,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     #Load model from disk
     model = factory.load_model(model_dir)
     # model_output = factory.load_model(model_output_dir)
-
+    
     #Initialize the measurement model
     measurement_model = MeasurementModel(model,calculate_output_derivative=True)
     # output_model = MeasurementModel(model_output, calculate_output_derivative=False)
@@ -162,7 +163,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     state_names = ['phase', 'phase_dot', 'stride_length']
 
     #Get the ground truth from the datasets
-    ground_truth_labels = ['phase','phase_dot','stride_length','ramp','jointmoment_ankle_x']
+    ground_truth_labels = ['phase','phase_dot','stride_length','ramp']
     
     #Initiailze gait dynamic model
     d_model = GaitDynamicModel()
@@ -180,25 +181,25 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     #Get list of conditions (incline, speed)
     condition_list = [
                       *([(0.0, 0.8),(0.0, 1.0),(0.0, 1.2),(0.0, 1.0),(0.0, 0.8)]*1),
-                      (0.0, 1.0),(0.0, 0.8),(0.0, 1.0),(0.0, 1.2)
-                    #   (-2.5,1.2),
-                    #   (-5,1.2),
-                    #   (-7.5,1.2),
-                    #   (-10,0.8),
-                    #   (-7.5,0.8),
-                    #   (-5,1.2),
-                    #   (-2.5,0.8),
-                    #   (0.0, 0.8),
-                    #   (2.5,1.2),
-                    #   (5,1.2),
-                    #   (7.5,1.2),
-                    #   (10,0.8),
-                    #   (7.5,0.8),
-                    #   (5,1.2),
-                    #   (2.5,0.8),
-                    #   (0.0, 1.2),
-                    #   (-7.5,0.8),
-                    #   (10,0.8),
+                      (0.0, 1.0),(0.0, 0.8),(0.0, 1.0),(0.0, 1.2),
+                      (-2.5,1.2),
+                      (-5,1.2),
+                      (-7.5,1.2),
+                      (-10,0.8),
+                      (-7.5,0.8),
+                      (-5,1.2),
+                      (-2.5,0.8),
+                      (0.0, 0.8),
+                      (2.5,1.2),
+                      (5,1.2),
+                      (7.5,1.2),
+                      (10,0.8),
+                      (7.5,0.8),
+                      (5,1.2),
+                      (2.5,0.8),
+                      (0.0, 1.2),
+                      (-7.5,0.8),
+                      (10,0.8),
                       ]
 
     condition_list = condition_list * 1
@@ -262,6 +263,9 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     error_squared_acumulator = np.zeros((num_states))
     output_moment_accumulator = 0
 
+    #State buffer
+    predicted_state_buffer = np.zeros((total_datapoints,num_states))
+
     #Iterate through all the datapoints
     for i in range(total_datapoints):
         
@@ -272,6 +276,8 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
         next_state = ekf_instance.calculate_next_estimates(time_step[i], curr_data)[0].T
         # next_output = ekf_instance.get_output()
 
+        #Store predicted state in buffer
+        predicted_state_buffer[i,:] = next_state
        
 
         #Get the predicted measurements
@@ -291,6 +297,36 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
             #Add the error for torque
             # output_moment_accumulator += np.power(next_output - multiple_step_ground_truth[i,-1],2)
 
+        #Calculate offline gait fingerprint 
+        if(use_subject_average == True and calculate_gf_after_step == True):
+            #Wait until we have at least a few steps worth of data
+            calculate_gf_num_steps = 4
+            calculate_gf_datapoints = calculate_gf_num_steps*150
+            wait_to_stabilize_datapoints = 20*150
+            if (i > wait_to_stabilize_datapoints and i % 10*calculate_gf_datapoints == 0):
+                
+                for kmodel in model.kmodels:
+                    #Calculate g for the last steps
+                    #Get the state and data for the last steps
+                    # regressor_state = predicted_state_buffer[i-calculate_gf_datapoints:i]
+                    regressor_state = multiple_step_ground_truth[i-calculate_gf_datapoints:i]
+                    regressor_joint_angles = multiple_step_data[i-calculate_gf_datapoints:i,[0]]
+                    #Calculate the regressor matrix that corresponds to that solution
+                    regressor_matrix = kmodel.model.evaluate(regressor_state)
+                    #Calculate the average fit for that subject
+                    regressor_average_estimation = (regressor_matrix[:,np.newaxis,:] @ kmodel.average_fit[:,:,np.newaxis]).reshape(-1,1)
+                    diff_from_average = regressor_joint_angles - regressor_average_estimation
+                    #Calculate G using least squares
+                    A = regressor_matrix @ kmodel.pmap.T
+                    g = np.linalg.solve(A.T @ A, A.T @ diff_from_average)
+
+                    #Update the average fit to the new subject fit
+                    kmodel.average_fit = g.T @ kmodel.pmap + kmodel.average_fit
+
+                    #Make sure that they are the same
+                    assert np.linalg.norm(model.kmodels[0].average_fit - ekf_instance.measurement_model.personal_model.kmodels[0].average_fit) < 1e-7
+
+                    #print(f" Gait fingerprint {g.T}")
 
         #Decide to plot or not
         if(plot_local == True):
@@ -344,10 +380,3 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
 
     return rmse, ls_gf
 
-
-
-
-if __name__=='__main__':
-
-    simulate_ekf()
-    

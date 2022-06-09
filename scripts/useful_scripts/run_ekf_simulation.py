@@ -30,7 +30,7 @@ num_gait_fingerprints = model.num_gait_fingerprint
 num_models = len(model.output_names)
 
 #Define states
-num_states = 3
+num_states = 4
 
 
 
@@ -63,10 +63,10 @@ initial_state_covariance = np.diag(initial_state_diag)
 
 #Set state limits
 upper_limits = np.array([ np.inf, np.inf, 2,  
-                                            #20
+                                            20
                                             ] + [np.inf]*num_gait_fingerprints).reshape(-1,1)
 lower_limits = np.array([-np.inf,      0.8, 0, 
-                                            #-20
+                                            -20
                                             ] + [-np.inf]*num_gait_fingerprints).reshape(-1,1)
 
 
@@ -113,26 +113,27 @@ initial_state_covariance_avg = np.diag(initial_state_diag_avg)
 
 #Process noise
 #Phase, Phase, Dot, Stride_length, ramp, gait fingerprints
-phase_var_avg =         0     
-phase_dot_var_avg =     2e-8 #2e-8
-stride_length_var_avg = 7e-8  #7e-8
+# phase_var_avg =         0     
+# phase_dot_var_avg =     2e-8 #2e-8
+# stride_length_var_avg = 7e-8  #7e-8
 # ramp_var_avg =          1e-5  
+
+phase_var_avg =         0     
+phase_dot_var_avg =     1e-7 #2e-8
+stride_length_var_avg = 1e-7  #7e-8
+ramp_var_avg =          1e-5  
 
 
 Q_avg = [phase_var_avg,
          phase_dot_var_avg,
          stride_length_var_avg,
-         #ramp_var_avg
+         ramp_var_avg
          ]
 
 Q_avg_diag = np.diag(Q_avg)
 
-average_subject_upper_limit = np.array([ np.inf, np.inf, 2, 
-                                                         #20
-                                                         ]).reshape(-1,1)
-average_subject_lower_limit = np.array([-np.inf,      0.5, 0.8, 
-                                                        #-20
-                                                        ]).reshape(-1,1)
+average_subject_upper_limit = upper_limits[:num_states,:]
+average_subject_lower_limit = lower_limits[:num_states,:]
 
 
 
@@ -150,7 +151,7 @@ average_subject_lower_limit = np.array([-np.inf,      0.5, 0.8,
 initial_conditions = np.array([0,
                                0.8,
                                1.2,
-                               #0
+                               0
                                ] 
                                + [0]*num_gait_fingerprints).reshape(-1,1)
 n_initial_conditions = 1
@@ -160,24 +161,29 @@ subject_to_rmse_gf_dict = {subject: [] for subject in subject_list}
 subject_to_rmse_avg_dict = {subject: [] for subject in subject_list}
 
 #Setup Flags                              phase,  phase dot,  stride_length
-DO_GF = True   #10878 out of 135000 rmse [0.023   0.029       0.065]
+DO_GF = False   #10878 out of 135000 rmse [0.023   0.029       0.065]
 DO_AVG = True  #14314 out of 191700 rmse [0.009   0.017       0.088] 
-DO_LS_GF = True
-
-RT_PLOT = True
+DO_LS_GF = False
+DO_AFTER_GF = True
+RT_PLOT = False
 
 ls_gf_list=[]
 
 #Calculate the RMSE for all the subjects
-for subject in subject_list[1:2]:
+for subject in subject_list[1:10]:
 
     print(f"Doing Subject {subject}")
+    
+  
 
     #Iterate through all the initial conditions
     for i in range(n_initial_conditions): 
 
         #Get the random initial state
         initial_state = initial_conditions[:,[i]]
+        
+        #Define for cases when gf is not in the state 
+        initial_state_no_gf = initial_state[:num_states,:]
 
         print(f"Doing initial condition {initial_state}")
         
@@ -196,15 +202,29 @@ for subject in subject_list[1:2]:
             #Add to the rmse dict
             subject_to_rmse_gf_dict[subject].append(rmse_testr)
 
-        if(DO_AVG):
+        if(DO_AFTER_GF):
             
             #Wait until the other plot is done to start
             if(RT_PLOT==True):
                 input("Press enter when plot is done updating")
 
-            #Crop the gait fingerprint from the initial state
-            initial_state_no_gf = initial_state[:num_states,:]
+            #Run the simulation again, with the average fit
+            #Get the rmse for that initial state
+            rmse_testr, ls_gf = simulate_ekf(subject, initial_state_no_gf, initial_state_covariance_avg, Q_avg_diag, R_scaled, 
+                                      average_subject_lower_limit, average_subject_upper_limit, plot_local=RT_PLOT, 
+                                      use_subject_average=True, calculate_gf_after_step=True)
 
+            print(f"\n\r  {i:02} {subject} avg system rmse {rmse_testr} initial state")
+            
+            #Add to the rmse dict
+            subject_to_rmse_avg_dict[subject].append(rmse_testr)
+
+        
+        if(DO_AVG):
+            
+            #Wait until the other plot is done to start
+            if(RT_PLOT==True):
+                input("Press enter when plot is done updating")
 
             #Run the simulation again, with the average fit
             #Get the rmse for that initial state
@@ -222,10 +242,6 @@ for subject in subject_list[1:2]:
             #Wait until the other plot is done to start
             if(RT_PLOT==True):
                 input("Press enter when plot is done updating")
-
-            #Crop the gait fingerprint from the initial state
-            initial_state_no_gf = initial_state[:num_states,:]
-
 
             #Run the simulation again, with the average fit
             #Get the rmse for that initial state
