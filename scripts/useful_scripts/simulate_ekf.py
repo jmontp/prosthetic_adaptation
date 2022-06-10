@@ -300,28 +300,33 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
         #Calculate offline gait fingerprint 
         if(use_subject_average == True and calculate_gf_after_step == True):
             #Wait until we have at least a few steps worth of data
-            calculate_gf_num_steps = 4
+            calculate_gf_num_steps = 10
             calculate_gf_datapoints = calculate_gf_num_steps*150
-            wait_to_stabilize_datapoints = 20*150
-            if (i > wait_to_stabilize_datapoints and i % 10*calculate_gf_datapoints == 0):
+            wait_to_stabilize_datapoints = 15*150
+            
+            #Store the original models
+            if (i == 0):
+                original_average_vectors = [kmodel.average_fit.copy() for kmodel in model.kmodels]
+            
+            if (i > wait_to_stabilize_datapoints and i % calculate_gf_datapoints == 0):
                 
-                for kmodel in model.kmodels:
+                for og_vector,joint_kmodel in zip(original_average_vectors, model.kmodels):
                     #Calculate g for the last steps
                     #Get the state and data for the last steps
                     # regressor_state = predicted_state_buffer[i-calculate_gf_datapoints:i]
                     regressor_state = multiple_step_ground_truth[i-calculate_gf_datapoints:i]
                     regressor_joint_angles = multiple_step_data[i-calculate_gf_datapoints:i,[0]]
                     #Calculate the regressor matrix that corresponds to that solution
-                    regressor_matrix = kmodel.model.evaluate(regressor_state)
+                    regressor_matrix = joint_kmodel.model.evaluate(regressor_state)
                     #Calculate the average fit for that subject
-                    regressor_average_estimation = (regressor_matrix[:,np.newaxis,:] @ kmodel.average_fit[:,:,np.newaxis]).reshape(-1,1)
+                    regressor_average_estimation = (regressor_matrix @ og_vector.T).reshape(-1,1)
                     diff_from_average = regressor_joint_angles - regressor_average_estimation
                     #Calculate G using least squares
-                    A = regressor_matrix @ kmodel.pmap.T
+                    A = regressor_matrix @ joint_kmodel.pmap.T
                     g = np.linalg.solve(A.T @ A, A.T @ diff_from_average)
 
                     #Update the average fit to the new subject fit
-                    kmodel.average_fit = g.T @ kmodel.pmap + kmodel.average_fit
+                    joint_kmodel.average_fit = g.T @ joint_kmodel.pmap + og_vector
 
                     #Make sure that they are the same
                     assert np.linalg.norm(model.kmodels[0].average_fit - ekf_instance.measurement_model.personal_model.kmodels[0].average_fit) < 1e-7

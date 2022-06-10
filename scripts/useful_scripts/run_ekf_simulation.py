@@ -170,7 +170,7 @@ RT_PLOT = False
 ls_gf_list=[]
 
 #Calculate the RMSE for all the subjects
-for subject in subject_list[1:10]:
+for subject in subject_list[0:10]:
 
     print(f"Doing Subject {subject}")
     
