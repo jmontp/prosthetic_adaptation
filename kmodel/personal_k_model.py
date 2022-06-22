@@ -72,8 +72,11 @@ class PersonalKModel():
         """
         self.pmap = new_pmap
 
+    def get_kronecker_output(self,input_data):
+        return self.model.evaluate(input_data)
 
-    def evaluate(self,input_data,use_personalized_fit=False, use_average_fit=False):
+
+    def evaluate(self,input_data,use_personalized_fit=False, use_average_fit=False,kronecker_output=None):
         """
         Evaluate a Kronecker Model multiplied by 
             the (average fit plus personalization map times gait fingerprint) 
@@ -96,7 +99,8 @@ class PersonalKModel():
         use_personalized_fit -- Boolean if true just use the fit for 
                                 the subject that was initialized in 
         use_average_fit -- Boolean, if true just use the average fit
-
+        kronecker_output -- kronecker model output can be feed in externally 
+                            to speed up calculations
 
         Returns
         output -- evaluated personalized kronecker model output
@@ -111,7 +115,8 @@ class PersonalKModel():
 
         #Calculate the output of the kronecker model
         # shape(num_datapoints, model_output_size)
-        kronecker_output = self.model.evaluate(input_data)
+        if kronecker_output is None:
+            kronecker_output = self.model.evaluate(input_data)
 
         #Default behaviour, use the gait fingerprints from the dataset
         #The gait fingeprints will be after the model variables

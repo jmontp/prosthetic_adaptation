@@ -130,9 +130,9 @@ class KroneckerModel():
             eval_value = func.evaluate(state_t).reshape(num_datapoints,-1,1)
             
             #Aggregate the kronecker product
-            output = (output[:,np.newaxis,:]*eval_value).reshape(num_datapoints,-1)
+            output = (output * eval_value).reshape(num_datapoints,1,-1)
                 
-        return output
+        return output.reshape(num_datapoints,-1)
     
 
     def _evaluate_pandas(self, pd_dataset):
@@ -159,7 +159,7 @@ class KroneckerModel():
         for func in self.basis_list:
             
             #Get data in numpy form
-            var_data = pd_dataset[func.var_name].values
+            var_data = pd_dataset[func.var_name].values.reshape(-1,1)
 
             #Calculate the specific function evaluated at the datapoints
             intermediary_output = func.evaluate(var_data)

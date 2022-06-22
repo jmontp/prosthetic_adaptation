@@ -10,6 +10,7 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 #TODO - It might be a good idea to implement numeric differentiation here
 
 
+from matplotlib.pyplot import axis
 import numpy as np
 
 
@@ -32,10 +33,14 @@ class PolynomialBasis(Basis):
         Basis.__init__(self,n,var_name)
         self.size = n
         self.name = "Polynomial"
-
+        self.powers = np.arange(n)
+        self.one_array = np.ones((1,n))
     #This function will evaluate the model at the given x value
     def evaluate(self,x):
-       return np.polynomial.polynomial.polyvander(x, self.n-1)
+        return np.power(x * self.one_array,self.powers)
+        #return np.polynomial.polynomial.polyvander(x, self.n-1)
+
+
          
 
 
@@ -76,11 +81,13 @@ class FourierBasis(Basis):
         #l is used to generate the coefficients of the series
         l = np.arange(1,self.n+1).reshape(1,-1)
         
-        #Initialize everything as one to get 
-        result = np.ones((x.shape[0],self.size))
-       
+        #Initialize everything as empty for speed increase to get 
+        result = np.empty((x.shape[0],self.size))
+
+        result[:,0] = 1
         result[:,1:self.n+1] = np.sin(2*np.pi*x @ l)
         result[:,self.n+1:] =  np.cos(2*np.pi*x @ l)
+        
         return result
 
 

@@ -82,6 +82,9 @@ class PersonalMeasurementFunction:
         #Pre-allocate output buffer so that it is faster than concatenating
         output_buffer = np.zeros((num_datapoints, self.num_kmodels))
 
+        #Since all the joint angles use the same model, precalculate the kronecker output
+        kronecker_output = self.kmodels[0].get_kronecker_output(input_data)
+
         #Evaluate every model on the input]
         for i, kmodel in enumerate(self.kmodels):
             
@@ -89,7 +92,8 @@ class PersonalMeasurementFunction:
             #Reshape to make sure numpy broadcasting rules hold
             output_buffer[:,[i]] = kmodel.evaluate(input_data, 
                                                    use_personalized_fit = use_personalized_fit, 
-                                                   use_average_fit = use_average_fit).reshape(num_datapoints,1)
+                                                   use_average_fit = use_average_fit,
+                                                   kronecker_output=kronecker_output).reshape(num_datapoints,1)
 
         return output_buffer
 
