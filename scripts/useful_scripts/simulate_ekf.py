@@ -180,8 +180,9 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     ############ Setup - Data Segments
     #Get list of conditions (incline, speed)
     condition_list = [
-                      *([(0.0, 0.8),(0.0, 1.0),(0.0, 1.2),(0.0, 1.0),(0.0, 0.8)]*1),
-                      (0.0, 1.0),(0.0, 0.8),(0.0, 1.0),(0.0, 1.2),
+                      (0.0, 0.8),
+                      (0.0, 1.0),
+                      (0.0, 1.2),
                       (-2.5,1.2),
                       (-5,1.2),
                       (-7.5,1.2),
@@ -204,7 +205,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
 
     condition_list = condition_list * 1
 
-    num_steps_per_condition = 26
+    num_steps_per_condition = 10
     points_per_step = 150
     points_per_condition = num_steps_per_condition * points_per_step
     num_trials = len(condition_list)
@@ -277,7 +278,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
         # next_output = ekf_instance.get_output()
 
         #Store predicted state in buffer
-        predicted_state_buffer[i,:] = next_state
+        predicted_state_buffer[i,:] = next_state.copy()
        
 
         #Get the predicted measurements
@@ -297,41 +298,70 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
             #Add the error for torque
             # output_moment_accumulator += np.power(next_output - multiple_step_ground_truth[i,-1],2)
 
-        #Calculate offline gait fingerprint 
+
+        ########################################
+        # Calculate offline gait fingerprint 
+        ########################################
         if(use_subject_average == True and calculate_gf_after_step == True):
             #Wait until we have at least a few steps worth of data
-            calculate_gf_num_steps = 10
+            calculate_gf_num_steps = 5
             calculate_gf_datapoints = calculate_gf_num_steps*150
             wait_to_stabilize_datapoints = 15*150
             
             #Store the original models
             if (i == 0):
-                original_average_vectors = [kmodel.average_fit.copy() for kmodel in model.kmodels]
-            
-            if (i > wait_to_stabilize_datapoints and i % calculate_gf_datapoints == 0):
+                original_average_vectors = [kmodel.average_fit for kmodel in model.kmodels]
+                prev_state = next_state.copy()
+                step_counter = 0
+           
+            #Don't do anythign until you stabalize
+            if (i > wait_to_stabilize_datapoints):
                 
-                for og_vector,joint_kmodel in zip(original_average_vectors, model.kmodels):
-                    #Calculate g for the last steps
-                    #Get the state and data for the last steps
-                    # regressor_state = predicted_state_buffer[i-calculate_gf_datapoints:i]
-                    regressor_state = multiple_step_ground_truth[i-calculate_gf_datapoints:i]
-                    regressor_joint_angles = multiple_step_data[i-calculate_gf_datapoints:i,[0]]
-                    #Calculate the regressor matrix that corresponds to that solution
-                    regressor_matrix = joint_kmodel.model.evaluate(regressor_state)
-                    #Calculate the average fit for that subject
-                    regressor_average_estimation = (regressor_matrix @ og_vector.T).reshape(-1,1)
-                    diff_from_average = regressor_joint_angles - regressor_average_estimation
-                    #Calculate G using least squares
-                    A = regressor_matrix @ joint_kmodel.pmap.T
-                    g = np.linalg.solve(A.T @ A, A.T @ diff_from_average)
+                #To understand if a step has passed, verify if the predicted state has changed a lot
+                delta_phase = prev_state[0,0] - next_state[0,0]
+                prev_state = next_state.copy()
 
-                    #Update the average fit to the new subject fit
-                    joint_kmodel.average_fit = g.T @ joint_kmodel.pmap + og_vector
+                #If there is a big jump in phase, its because a step just happened
+                if(abs(delta_phase) > 0.8):
+                    step_counter += 1
 
-                    #Make sure that they are the same
-                    assert np.linalg.norm(model.kmodels[0].average_fit - ekf_instance.measurement_model.personal_model.kmodels[0].average_fit) < 1e-7
+                if(step_counter > calculate_gf_num_steps):
 
-                    #print(f" Gait fingerprint {g.T}")
+                    #Reset step counter
+                    step_counter = 0
+                    print("")
+                    for joint_index,(og_vector,joint_kmodel) in enumerate(zip(original_average_vectors, model.kmodels)):
+                        #Calculate g for the last steps
+                        #Get the state and data for the last steps
+                        # regressor_state = predicted_state_buffer[i-calculate_gf_datapoints:i]
+                        regressor_state = multiple_step_ground_truth[i-calculate_gf_datapoints:i]
+                        regressor_joint_angles = multiple_step_data[i-calculate_gf_datapoints:i,[joint_index]]
+                        #Calculate the regressor matrix that corresponds to that solution
+                        regressor_matrix = joint_kmodel.model.evaluate(regressor_state)
+                        
+                        
+                        # ## Calculate the regression without personalization map 
+                        # A = regressor_matrix
+                        # fit = np.linalg.solve(A.T @ A, A.T @ regressor_joint_angles)
+                        # joint_kmodel.average_fit = fit.T
+                        
+                        
+                        ##Calculate gait fingerprint of personalization map
+                        #Calculate the average fit for that subject
+                        regressor_average_estimation = (regressor_matrix @ og_vector.T).reshape(-1,1)
+                        diff_from_average = regressor_joint_angles - regressor_average_estimation
+                        #Calculate G using least squares
+                        A = regressor_matrix @ joint_kmodel.pmap.T
+                        g = np.linalg.solve(A.T @ A + 0 * np.eye(A.shape[1]) , A.T @ diff_from_average)
+                        print(f"{joint_kmodel.output_name} g magnitude {g.T}")
+                        #Update the average fit to the new subject fit
+                        joint_kmodel.average_fit = g.T @ joint_kmodel.pmap + og_vector
+
+
+                        #Make sure that they are the same
+                        assert np.linalg.norm(model.kmodels[0].average_fit - ekf_instance.measurement_model.personal_model.kmodels[0].average_fit) < 1e-7
+
+                        #print(f" Gait fingerprint {g.T}")
 
         #Decide to plot or not
         if(plot_local == True):
