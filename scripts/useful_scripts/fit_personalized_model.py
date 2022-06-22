@@ -17,10 +17,10 @@ import pandas as pd
 # stride_basis = HermiteBasis(2,'stride_length')
 # l2_lambda = [0.2,0.01,0,0]
 
-phase_basis = FourierBasis(3,'phase')
-phase_dot_basis = HermiteBasis(1,'phase_dot')
-# ramp_basis = HermiteBasis(2,'ramp')
-stride_basis = HermiteBasis(2,'stride_length')
+phase_basis = FourierBasis(11,'phase')
+phase_dot_basis = PolynomialBasis(1,'phase_dot')
+stride_basis = PolynomialBasis(3,'stride_length')
+ramp_basis = PolynomialBasis(3,'ramp')
 
 #l2 regularization on the output functions, not the basis functions
 l2_lambda = [0.0000,
@@ -31,7 +31,7 @@ l2_lambda = [0.0000,
 basis_list = [phase_basis, 
               phase_dot_basis,  
               stride_basis,
-              #ramp_basis
+              ramp_basis
               ]
 
 #Create the module 
@@ -50,8 +50,8 @@ subject_list = [f'AB{i:02}' for i in range(1,11)]
 r01_dataset_per_person = [(subject_name,pd.read_parquet(dataset_location.format(subject_name))) for subject_name in subject_list]
 
 #Filter for ramp = 0
-mask_list = [dataset['ramp'] == 0.0 for name,dataset in r01_dataset_per_person]
-r01_dataset_per_person = [(name,dataset[mask]) for (name,dataset),mask in zip(r01_dataset_per_person, mask_list)]
+# mask_list = [dataset['ramp'] == 0.0 for name,dataset in r01_dataset_per_person]
+# r01_dataset_per_person = [(name,dataset[mask]) for (name,dataset),mask in zip(r01_dataset_per_person, mask_list)]
 
 #Get the least amount of steps per condition
 speed_list = [0.8,1.0,1.2]
@@ -64,10 +64,10 @@ r01_dataset_per_person = [(name,remove_steps_per_condition(dataset,min_stride)) 
 
 #Print the column names that have angles in the name
 #Set the number of gait fingerptings
-num_gf = 3
+num_gf = 5
 
 #Get the output names
-output_name = ['jointangles_thigh_x']#,'jointmoment_ankle_x]# 'jointangles_knee_x', 'jointangles_hip_x',]
+output_name = ['jointangles_thigh_x','jointangles_shank_x','jointangles_foot_x']#,'jointmoment_ankle_x]# 'jointangles_knee_x', 'jointangles_hip_x',]
                #'jointangles_shank_dot_x', 'jointangles_foot_dot_x', 'jointangles_knee_dot_x', 'jointangles_hip_dot_x','jointangles_thigh_dot_x',] #Dataport Dataset
 #output_name = ['jointAngles_LAnkleAngles_x', 'jointAngles_LHipAngles_x', 'jointAngles_LKneeAngles_x'] #R01 Dataset
 
@@ -77,7 +77,7 @@ print("Starting to fit the models")
 factory = PersonalizedKModelFactory()
 
 #Make a new list to define the runtime 
-subject_left_out_run_list = ['AB01']
+# subject_left_out_run_list = ['AB01']
 subject_left_out_run_list = subject_list
 
 
