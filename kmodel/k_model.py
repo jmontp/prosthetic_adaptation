@@ -8,7 +8,7 @@ that takes different function bases and combines them
 import pandas as pd
 import numpy as np
 from kmodel.function_bases import Basis
-from typing import List
+from typing import List, Union
 
 class KroneckerModel():
 
@@ -68,7 +68,7 @@ class KroneckerModel():
         return self.output_size
 
 
-    def evaluate(self,dataset):
+    def evaluate(self,dataset: Union[np.ndarray,pd.DataFrame]) -> np.ndarray:
         """
         Evaluate the basis with the corresponding dataset
 
@@ -97,7 +97,7 @@ class KroneckerModel():
                                      np array or pandas dataframe")
 
 
-    def _evaluate_numpy(self,np_dataset):
+    def _evaluate_numpy(self,np_dataset: np.ndarray) -> np.ndarray:
         """
         Evaluate the basis with a numpy input
 
@@ -135,7 +135,7 @@ class KroneckerModel():
         return output.reshape(num_datapoints,-1)
     
 
-    def _evaluate_pandas(self, pd_dataset):
+    def _evaluate_pandas(self, pd_dataset : pd.DataFrame) -> np.ndarray:
         """
         Evaluate the basis with a pandas Dataframe
         
@@ -154,10 +154,9 @@ class KroneckerModel():
 
         #Initialize the output of the basis that will be updated in the loop
         output = np.array(1).reshape(1,1,1)
-        
+
         #Calculate the kronecker basis per state
-        for func in self.basis_list:
-            
+        for func in self.basis_list:           
             #Get data in numpy form
             var_data = pd_dataset[func.var_name].values.reshape(-1,1)
 
@@ -166,5 +165,52 @@ class KroneckerModel():
 
             #Convert matrices to 3D to execute the kronecker product multiplication
             output = (output[:,np.newaxis,:]*intermediary_output[:,:,np.newaxis]).reshape(num_datapoints,-1)
-            
+
         return output
+
+
+    def evaluate_derivative(self,np_dataset : np.ndarray) -> np.ndarray:
+        """ 
+        This function derives the kronecker model at the state indexed by state_derivative
+
+        Keyword Arguments:
+        np_dataset -- numpy dataset that will be evaluated. Expected
+                      hape is (num_datapoints, num_basis)
+
+        Returns:
+        output -- evaluation of the kronecker product with a derivative.
+                  shape(num_datapoints * num_basis, output_size)
+        """
+
+        derivative_list = []
+
+        for i in range(self.num_basis):
+            
+            #Skip phase dot
+            if i == 1:
+                continue
+            
+            #Define the delta for the numerical derivative
+            delta = 1e-7
+
+            #Evaluate the kronecker model at the original state
+            eval_at_state = self._evaluate_numpy(np_dataset)
+
+            #Create the delta state
+            # Need to make copy since np array is mutable
+            delta_np_dataset = np_dataset.copy()
+            delta_np_dataset[:,i] += delta
+
+            #Evaluate the kronecker model at the state plus delta
+            eval_at_delta = self._evaluate_numpy(delta_np_dataset)
+
+            #Calculate the derivative
+            derivative = (eval_at_delta - eval_at_state)/delta
+
+            #Add to list
+            derivative_list.append(derivative)
+        
+        #Stack all the derivatives
+        derivative_output = np.concatenate(derivative_list,axis=0)
+
+        return derivative_output
