@@ -99,17 +99,22 @@ class PersonalizedKModelFactory:
                     curr_l2_lambda = l2_lambda
 
                 #Get the subject fit
-                subject_fit, (fit_rmse, RTR, num_datapoints) = fitter.fit_data(k_model, subject_data, output,l2_lambda=curr_l2_lambda)
+                subject_fit, (fit_rmse, RTR, num_datapoints) = \
+                    fitter.fit_data(k_model, subject_data, 
+                                    output,l2_lambda=curr_l2_lambda)
 
                 #Add it to the list of fits
                 XI_output_list.append(subject_fit)
 
-                #Add the information about the gramian and the number of datapoints
+                #Add the information about the gramian and the number of
+                # datapoints
                 RTR_aggregator += RTR
                 output_datapoints += num_datapoints
 
                 #Save the rmse to calculate the average rmse for the subject
                 total_rmse_list.append(fit_rmse)
+
+                #Save the regressor 
             
             #Print and report the rmse 
             avg_rmse = np.mean(total_rmse_list)
@@ -219,7 +224,8 @@ class PersonalizedKModelFactory:
                                                   gait_fingerprint = gait_fingerprint,
                                                   subject_name = keep_subject_fit,
                                                   average_model_residual=avg_rmse_per_output[output],
-                                                  l2_lambda=l2_lambda)
+                                                  l2_lambda=l2_lambda,
+                                                  diff_from_average_matrix=XI_0_list[i])
             
             #Append to the model output list
             k_model_list.append(personalized_k_model)
@@ -252,7 +258,8 @@ class PersonalizedKModelFactory:
             personalized_k_model = PersonalKModel(k_model,pmap,xi_avg,output, 
                                                   gait_fingerprint, keep_subject_fit,
                                                   average_model_residual=avg_rmse_per_output[output],
-                                                  l2_lambda=l2_lambda)
+                                                  l2_lambda=l2_lambda,
+                                                  diff_from_average_matrix=XI_0_list[i])
             
             #Append to the model output list
             k_model_leave_out_list.append(personalized_k_model)

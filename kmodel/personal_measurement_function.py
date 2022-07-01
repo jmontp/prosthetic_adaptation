@@ -37,7 +37,6 @@ class PersonalMeasurementFunction:
 
         #Have a property for the number of gait fingerprint
         self.num_gait_fingerprint = models[0].num_gait_fingerpints
-        pass
 
 
     def evaluate(self, input_data, use_personalized_fit = False, use_average_fit=False):

@@ -1,14 +1,14 @@
 #Imoprt the kronecker model
 from context import kmodel
 from kmodel.personalized_model_factory import PersonalizedKModelFactory
-from kmodel.function_bases import FourierBasis, HermiteBasis, PolynomialBasis
+from kmodel.function_bases import FourierBasis, PolynomialBasis
 from kmodel.k_model import KroneckerModel
 
 #Import the function bases that will be used to create the functions
 #Common imports
 import numpy as np
 import pandas as pd
-
+import itertools
 
 #Initialize the random basis functions
 # phase_basis = FourierBasis(6,'phase')
@@ -17,10 +17,10 @@ import pandas as pd
 # stride_basis = HermiteBasis(2,'stride_length')
 # l2_lambda = [0.2,0.01,0,0]
 
-phase_basis = FourierBasis(11,'phase')
+phase_basis = FourierBasis(10,'phase')
 phase_dot_basis = PolynomialBasis(1,'phase_dot')
-stride_basis = PolynomialBasis(3,'stride_length')
-ramp_basis = PolynomialBasis(3,'ramp')
+stride_basis = PolynomialBasis(2,'stride_length')
+ramp_basis = PolynomialBasis(2,'ramp')
 
 #l2 regularization on the output functions, not the basis functions
 l2_lambda = [0.0000,
@@ -46,30 +46,67 @@ subject_list = [f'AB{i:02}' for i in range(1,11)]
 
 
 ### Dataset modification
-#Load the datasets
-r01_dataset_per_person = [(subject_name,pd.read_parquet(dataset_location.format(subject_name))) for subject_name in subject_list]
+##########
+## Import and format dataset
 
-#Filter for ramp = 0
-# mask_list = [dataset['ramp'] == 0.0 for name,dataset in r01_dataset_per_person]
-# r01_dataset_per_person = [(name,dataset[mask]) for (name,dataset),mask in zip(r01_dataset_per_person, mask_list)]
+DATASET_LOCATION = ("../../data/flattened_dataport/"
+                    "dataport_flattened_partial_{}.parquet")
+
+#Define the subject list
+subject_list = [f'AB{i:02}' for i in range(1,11)]
+
+#Load the datasets
+r01_dataset_per_person = [(subject_name,
+                        pd.read_parquet(DATASET_LOCATION
+                        .format(subject_name)))
+                        for subject_name
+                        in subject_list]
+
+
+### Balance the dataset so that all conditions have the same amount influence
 
 #Get the least amount of steps per condition
 speed_list = [0.8,1.0,1.2]
-find_min_stride = lambda dataset: min([(dataset.speed == speed).sum() for speed in speed_list])
-min_steps_in_conidtion_per_person = [find_min_stride(dataset) for name,dataset in r01_dataset_per_person]
+ramp_list = [-10,-7.5,-5,0,5,7.5,10]
 
-#Filter to get the
-remove_steps_per_condition = lambda dataset,min_stride: pd.concat([dataset[dataset.speed == speed].iloc[:min_stride] for speed in speed_list])
-r01_dataset_per_person = [(name,remove_steps_per_condition(dataset,min_stride)) for (name,dataset),min_stride in zip(r01_dataset_per_person, min_steps_in_conidtion_per_person)]
+#Get all the combinations of ramp and speed
+speed_ramp_comb = list(itertools.product(speed_list,ramp_list))
+
+#Create function that iterates through conditions in a dataset to find the
+# condition with the samllest datapoints
+find_min_stride = lambda dataset: min([((dataset.speed == speed) &
+                                        (dataset.ramp == ramp)).sum()
+                                      for speed,ramp
+                                      in speed_ramp_comb])
+
+#Find the minimum condition per step
+min_steps_in_conidtion_per_person = [find_min_stride(person_dataset)
+                                    for _,person_dataset
+                                    in r01_dataset_per_person]
+
+
+#Function that only keeps the specified amount of datapoints
+remove_steps_per_condition = lambda dataset,min_stride: \
+    pd.concat([dataset[(dataset.speed == speed) & (dataset.ramp==ramp)]
+            .iloc[:min_stride]
+            for speed,ramp
+            in speed_ramp_comb])
+
+#Get the reduced dataset per person
+r01_dataset_per_person = \
+    [(name,remove_steps_per_condition(dataset,min_stride))
+    for (name,dataset),min_stride
+    in zip(r01_dataset_per_person, min_steps_in_conidtion_per_person)]
+
+#Get the output names
+output_name = ['jointangles_thigh_x','jointangles_foot_x','jointangles_shank_x']
+
+
 
 #Print the column names that have angles in the name
 #Set the number of gait fingerptings
 num_gf = 5
 
-#Get the output names
-output_name = ['jointangles_thigh_x','jointangles_shank_x','jointangles_foot_x']#,'jointmoment_ankle_x]# 'jointangles_knee_x', 'jointangles_hip_x',]
-               #'jointangles_shank_dot_x', 'jointangles_foot_dot_x', 'jointangles_knee_dot_x', 'jointangles_hip_dot_x','jointangles_thigh_dot_x',] #Dataport Dataset
-#output_name = ['jointAngles_LAnkleAngles_x', 'jointAngles_LHipAngles_x', 'jointAngles_LKneeAngles_x'] #R01 Dataset
 
 print("Starting to fit the models")
 
