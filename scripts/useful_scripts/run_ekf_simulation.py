@@ -1,5 +1,15 @@
-#Common imports 
-from matplotlib.pyplot import plot
+"""
+This file is meant to launch many different simulations of extended kalman 
+filters and log their results
+
+"""
+
+#Import Common libraries
+from datetime import date
+import json
+from collections import OrderedDict
+
+#Common imports
 import numpy as np
 
 #Import custom library
@@ -9,10 +19,13 @@ from context import ekf
 from context import utils
 from kmodel.personalized_model_factory import PersonalizedKModelFactory
 
-#Import loaders
-import pickle
+#Imoprt google sheet library to store results
+import gspread
 
 
+###############################################################################
+###############################################################################
+# Get model information
 #Define the subject
 subject_list = [f"AB{i:02}" for i in range(1,11)]
 
@@ -20,310 +33,522 @@ subject_list = [f"AB{i:02}" for i in range(1,11)]
 factory = PersonalizedKModelFactory()
 
 #Path to model
-model_dir = f'../../data/kronecker_models/left_one_out_model_{subject_list[0]}.pickle'
+model_dir = (f'../../data/kronecker_models/'
+             f'left_one_out_model_{subject_list[0]}.pickle')
 
 #Load model from disk
 model = factory.load_model(model_dir)
 
 #Set the number of gait fingerprints
-num_gait_fingerprints = model.num_gait_fingerprint
-num_models = len(model.output_names)
+NUM_GAIT_FINGERPRINTS = model.num_gait_fingerprint
+NUM_MODELS = len(model.output_names)
 
 #Define states
-num_states = 4
+NUM_STATES = model.num_states
+STATE_NAMES = model.kmodels[0].model.basis_names
 
+#Get the joint names
+JOINT_NAMES = model.output_names
 
+###############################################################################
+###############################################################################
+# Setup up google sheets writter
+
+#Log in based on the service_account key found in ~/.config/gspread
+sa = gspread.service_account()
+
+#Get the file that we want
+google_file = sa.open("EKF Simulation Results")
+
+#Get the worksheet
+google_worksheet = google_file.worksheet("Data")
+calibration_worksheet = google_file.worksheet("Calibration Testing")
+
+#Get experiment information
+experiment_comment = \
+    input("Describe the experiment that you are about to run: ")
+
+###############################################################################
+###############################################################################
+# Setup Noise Parameters of the EKF while updating the gait fingerprints online
 
 #Measurement covarience, Innovation
-position_noise_scale = 1
-velocity_noise_scale = 1 #noise added for derivative terms
-residual_power = 2
+POSITION_NOISE_SCALE = 1
+VELOCITY_NOISE_SCALE = 1 
+RESIDUAL_POWER = 2
+
 #Get the joint degree tracking error and then joint velocity measurement error
-r_diag = [position_noise_scale*(kmodel.avg_model_residual**residual_power) for kmodel in model.kmodels] + \
-         [velocity_noise_scale*(kmodel.avg_model_residual**residual_power) for kmodel in model.kmodels]
+r_diag = [POSITION_NOISE_SCALE*(kmodel.avg_model_residual**RESIDUAL_POWER) 
+         for kmodel
+         in model.kmodels] + \
+         [VELOCITY_NOISE_SCALE*(kmodel.avg_model_residual**RESIDUAL_POWER) 
+         for kmodel
+         in model.kmodels]
 
 R = np.diag(r_diag)
-R_scaled = R*0.9
 
-frec_component = position_noise_scale * velocity_noise_scale/6
+#Try to load saved initial covariance
+# If no covariance is found then use default value
+#Create helper function for when we want to update covar online
+def load_initial_covar():
+    try:
+        initial_state_covar = np.load('pred_cov_gf.npy')
 
+        #If the covariance has the wrong shape, use default values
+        if initial_state_covar.shape[0] != NUM_STATES + NUM_GAIT_FINGERPRINTS:
+            raise FileNotFoundError
 
-#Generate the initial covariance as being very low
-# try:
-#     initial_state_covariance = np.load('pred_cov.npy')
-#     if initial_state_covariance.shape[0] != num_states + num_gait_fingerprints:
-#         raise Exception
+    except FileNotFoundError:
+        #State initial covariance
+        COV_DIAG = 1e-3
+        #Gait fingerprint initial covariance
+        GF_COV_INIT = 1e-5
+        INITIAL_STATE_DIAG = [COV_DIAG]*NUM_STATES + \
+                            [GF_COV_INIT]*(NUM_GAIT_FINGERPRINTS)
+        
+        #Define the initial covariance
+        initial_state_covar = np.diag(INITIAL_STATE_DIAG)
 
-# except Exception:
+    return initial_state_covar
 
-cov_diag = 5e-3
-gf_cov_init = 5e-5
-initial_state_diag = [cov_diag]*num_states + [gf_cov_init*1e+6] + [gf_cov_init]*(num_gait_fingerprints-1)
-initial_state_covariance = np.diag(initial_state_diag)
+#Get initial covariance
+initial_state_covariance = load_initial_covar()
 
+#Create state limits so that the models do not have to extrapolate over
+# conditions that they have not seen before
 #Set state limits
-upper_limits = np.array([ np.inf, np.inf, 2,  
-                                            20
-                                            ] + [np.inf]*num_gait_fingerprints).reshape(-1,1)
-lower_limits = np.array([-np.inf,      0.8, 0, 
-                                            -20
-                                            ] + [-np.inf]*num_gait_fingerprints).reshape(-1,1)
+upper_limits = np.array([ np.inf, np.inf, 2,20] +\
+                        [np.inf]*NUM_GAIT_FINGERPRINTS
+                       ).reshape(-1,1)
+
+lower_limits = np.array([-np.inf,0.8, 0,-20] + \
+                        [-np.inf]*NUM_GAIT_FINGERPRINTS
+                       ).reshape(-1,1)
 
 
-#Test queue
-#-> Make gait fingerprint faster - works pretty well
-#-> Turn heteroschedastic model off totally, just Q_h, just R_h
-#Make ramp faster
-#Updade model structure to have higher order models
+#Process Model Noise For each state
+PHASE_VAR =             0
+PHASE_DOT_VAR =         2e-7
+STRIDE_LENGTH_VAR =     2e-7
+RAMP_VAR =              2e-5
+GF_VAR =                1e-8
 
-#Process noise
-gf_var =                4e-10# * frec_component/30
-phase_var =             0   
-phase_dot_var =         9e-8# * frec_component/4
-stride_length_var =     6e-8# * frec_component/4#32447 out of 108000 rmse [0.012 0.031 0.067]  with 1e-7
-# ramp_var =              1e-4
+#Create a list with all the elements
+Q_DIAG = [PHASE_VAR,
+          PHASE_DOT_VAR,
+          STRIDE_LENGTH_VAR,
+          RAMP_VAR] + [GF_VAR]*(NUM_GAIT_FINGERPRINTS)
 
-
-
-# q_diag = [phase_var,phase_dot_var,stride_length_var,
-#                                                     #ramp_var
-#                                                     ] + [gf_var*(10**i) for i in range (num_gait_fingerprints)]
-q_diag = [phase_var,
-          phase_dot_var,
-          stride_length_var,
-          #ramp_var
-          ] + [5e-6] + [gf_var]*(num_gait_fingerprints-1)
-
-# q_diag = [phase_var,phase_dot_var,stride_length_var,
-#                                                    #ramp_var
-#                                                    ] + [5e-5,1e-6,1e-6]
-Q_gf = np.diag(q_diag)
+#Convert into a diagonal matrix
+Q_GF = np.diag(Q_DIAG)
 
 
 
-##########################################3
-# try: 
-#     initial_state_covariance_avg = np.load('pred_covar_avg.npy')
-# except Exception:
-#     print("Using default covar")
-cov_diag = 5e-6
-initial_state_diag_avg = [cov_diag]*num_states
-initial_state_covariance_avg = np.diag(initial_state_diag_avg)
+###############################################################################
+###############################################################################
+# Setup Noise Parameters of the EKF while the gait fingerprints are fixed
+ 
+#Try to load saved initial covariance
+# If no covariance is found then use default value
+#Create helper function for when we want to update covar online
+def load_initial_covariance_avg():
+    try: 
+        initial_state_covar_avg = np.load('pred_covar_avg.npy')
 
+        #If the covariance has the wrong shape, use default values
+        if initial_state_covariance.shape[0] != NUM_STATES:
+            raise FileNotFoundError
+
+    except FileNotFoundError:
+        #State Initial Covariance
+        COV_DIAG = 5e-6
+        INITIAL_STATE_DIAG_AVG = [COV_DIAG]*NUM_STATES
+        initial_state_covar_avg = np.diag(INITIAL_STATE_DIAG_AVG)
+
+    return initial_state_covar_avg
+
+#Get Initial covariance
+initial_state_covariance_avg = load_initial_covariance_avg()
 
 #Process noise
 #Phase, Phase, Dot, Stride_length, ramp, gait fingerprints
-# phase_var_avg =         0     
-# phase_dot_var_avg =     2e-8 #2e-8
-# stride_length_var_avg = 7e-8  #7e-8
-# ramp_var_avg =          1e-5  
-
-phase_var_avg =         0     
-phase_dot_var_avg =     1e-7 #2e-8
-stride_length_var_avg = 1e-7  #7e-8
-ramp_var_avg =          1e-5  
+PHASE_VAR_AVG =         0     
+PHASE_DOT_VAR_AVG =     1E-7 #2E-8
+STRIDE_LENGTH_VAR_AVG = 1E-7  #7E-8
+RAMP_VAR_AVG =          1E-5  
 
 
-Q_avg = [phase_var_avg,
-         phase_dot_var_avg,
-         stride_length_var_avg,
-         ramp_var_avg
+Q_AVG = [PHASE_VAR_AVG,
+         PHASE_DOT_VAR_AVG,
+         STRIDE_LENGTH_VAR_AVG,
+         RAMP_VAR_AVG
          ]
 
-Q_avg_diag = np.diag(Q_avg)
-
-average_subject_upper_limit = upper_limits[:num_states,:]
-average_subject_lower_limit = lower_limits[:num_states,:]
+Q_AVG_DIAG = np.diag(Q_AVG)
 
 
+#Define state limits so that we do not extrapolate too far from the parameters
+# that the model has not seen before
+average_subject_upper_limit = upper_limits[:NUM_STATES,:]
+average_subject_lower_limit = lower_limits[:NUM_STATES,:]
 
-#Generate random initial conditions 
-# n_initial_conditions = 1
-# lower_state_random_limit = [0.0, -0.3,   0, -20] + [0]*num_gait_fingerprints
-# upper_state_random_limit = [1.0,  1.4, 2.0, 20] + [0]*num_gait_fingerprints
-
-# #Unsure how to feed in the upper and lower bounds for each state as a vector, so just generate each condition 
-# #with a list comprehension and then append all of them together as a np array
-# initial_conditions = np.array([np.random.uniform(l,h,n_initial_conditions) for l,h in zip(lower_state_random_limit, 
-#                                                                                           upper_state_random_limit)])
 
 #Static initial condition near the expected values
-initial_conditions = np.array([0,
-                               0.8,
-                               1.2,
-                               0
-                               ] 
-                               + [0]*num_gait_fingerprints).reshape(-1,1)
-n_initial_conditions = 1
+initial_conditions = np.array([0,0.8,1.2,0] +
+                              [0]*NUM_GAIT_FINGERPRINTS).reshape(-1,1)
+N_INITIAL_CONDITIONS = 1
 
-#Initialize a dictionary for all the rmse with the subjects
-subject_to_rmse_gf_dict = {subject: [] for subject in subject_list}
-subject_to_rmse_avg_dict = {subject: [] for subject in subject_list}
+##############################################################################################################################################################s
+##############################################################################################################################################################
+#Setup Flags   
 
-#Setup Flags                              phase,  phase dot,  stride_length
-DO_GF = False   #10878 out of 135000 rmse [0.023   0.029       0.065]
-DO_AVG = True  #14314 out of 191700 rmse [0.009   0.017       0.088] 
+#Different test scenarios, only have one set to true
+DO_GF = True
+DO_AVG = False 
+DO_GF_NULL = False
 DO_LS_GF = False
-DO_AFTER_GF = True
+DO_AFTER_GF = False
+
+#Do the heteroschedastic mreasurement model
+HETEROSCHEDASTHIC_MODEL = True
+
+#Plot in the real time plotter interface
 RT_PLOT = False
 
-ls_gf_list=[]
+#Update the initial covariance between subjects
+UPDATE_COVAR_BETWEEN_SUBJECTS = False
 
-#Calculate the RMSE for all the subjects
-for subject in subject_list[0:10]:
+#Save to google sheets
+SAVE_TO_GOOGLE_SHEETS = True
 
-    print(f"Doing Subject {subject}")
-    
-  
+#Repeast Tests to converte the initial covariance
+NUM_REPEAT_TESTS = 1
 
-    #Iterate through all the initial conditions
-    for i in range(n_initial_conditions): 
+#Make sure that you only run one test case at a time
+assert sum([DO_GF, DO_AVG, DO_AFTER_GF, DO_LS_GF,DO_GF_NULL]) == 1,\
+     "Only one test case per simulation!"
 
-        #Get the random initial state
-        initial_state = initial_conditions[:,[i]]
-        
-        #Define for cases when gf is not in the state 
-        initial_state_no_gf = initial_state[:num_states,:]
+##############################################################################################################################################################
+##############################################################################################################################################################
+# Run the simulation
+#Repeat to converge the variance
+for test_num in range (NUM_REPEAT_TESTS):
 
-        print(f"Doing initial condition {initial_state}")
-        
-        if(DO_GF):   
+    #Print where we are in the tests if we are doing multiple
+    if NUM_REPEAT_TESTS > 1:
+        print(f"Repeating test {test_num+1}/{NUM_REPEAT_TESTS}")
+
+    #Initialize a list to store the results
+    subject_results = []
+
+    #Calculate the RMSE for all the subjects
+    for subject_index,subject in enumerate(subject_list):
+
+        print(f"Doing Subject {subject}")
+
+        if (UPDATE_COVAR_BETWEEN_SUBJECTS is True):
+            initial_state_covariance = load_initial_covar()
+            initial_state_covariance_avg = load_initial_covariance_avg()
+            print(f"new covar = {initial_state_covariance}")
+
+
+        #Iterate through all the initial conditions
+        for i in range(N_INITIAL_CONDITIONS):
+
+            #Get the random initial state
+            initial_state = initial_conditions[:,[i]]
             
+            #Define for cases when gf is not in the state
+            initial_state_no_gf = initial_state[:NUM_STATES,:]
+
             #Wait until the other plot is done to start
-            if(RT_PLOT==True):
-                input("Press enter when plot is done updating")
-            
-            #Get the rmse for that initial state
-            rmse_testr, ls_gf = simulate_ekf(subject, initial_state, initial_state_covariance, Q_gf, R_scaled, 
-                                     lower_limits, upper_limits, plot_local=RT_PLOT)
-
-            print(f"\n\r  {i:02} {subject} gf system rmse {rmse_testr}")
-            
-            #Add to the rmse dict
-            subject_to_rmse_gf_dict[subject].append(rmse_testr)
-
-        if(DO_AFTER_GF):
-            
-            #Wait until the other plot is done to start
-            if(RT_PLOT==True):
-                input("Press enter when plot is done updating")
-
-            #Run the simulation again, with the average fit
-            #Get the rmse for that initial state
-            rmse_testr, ls_gf = simulate_ekf(subject, initial_state_no_gf, initial_state_covariance_avg, Q_avg_diag, R_scaled, 
-                                      average_subject_lower_limit, average_subject_upper_limit, plot_local=RT_PLOT, 
-                                      use_subject_average=True, calculate_gf_after_step=True)
-
-            print(f"\n\r  {i:02} {subject} avg system rmse {rmse_testr} initial state")
-            
-            #Add to the rmse dict
-            subject_to_rmse_avg_dict[subject].append(rmse_testr)
-
-        
-        if(DO_AVG):
-            
-            #Wait until the other plot is done to start
-            if(RT_PLOT==True):
+            if(RT_PLOT is True):
                 input("Press enter when plot is done updating")
 
-            #Run the simulation again, with the average fit
-            #Get the rmse for that initial state
-            rmse_testr, ls_gf = simulate_ekf(subject, initial_state_no_gf, initial_state_covariance_avg, Q_avg_diag, R_scaled, 
-                                      average_subject_lower_limit, average_subject_upper_limit, plot_local=RT_PLOT, 
-                                      use_subject_average=True)
+            if(DO_GF is True):
+                #Create string to identify test case
+                TEST_NAME = "Online Gait Fingerprint"
 
-            print(f"\n\r  {i:02} {subject} avg system rmse {rmse_testr} initial state")
+                #Get the rmse for that initial state
+                rmse_testr, test_condition, steps_per_cond, rmse_delay\
+                                = simulate_ekf(subject,
+                                                initial_state,
+                                                initial_state_covariance,
+                                                Q_GF, R,
+                                                lower_limits, upper_limits,
+                                                plot_local=RT_PLOT,
+                                                heteroschedastic_model=\
+                                                    HETEROSCHEDASTHIC_MODEL)
+            if(DO_GF_NULL is True):
+                #Create string to identify test case
+                TEST_NAME = "Null Space Gait Fingerprint"
+
+                #Get the rmse for that initial state
+                rmse_testr, test_condition, steps_per_cond, rmse_delay\
+                                = simulate_ekf(subject, 
+                                                initial_state,
+                                                initial_state_covariance,
+                                                Q_GF, R,
+                                                lower_limits, upper_limits,
+                                                plot_local=RT_PLOT,
+                                                null_space_projection=True,
+                                                heteroschedastic_model=\
+                                                    HETEROSCHEDASTHIC_MODEL)
+            if(DO_AFTER_GF):
+                
+                #Create string to identify test case
+                TEST_NAME = "After-Step Least Squares Gait Fingerprint"
+
+                #Run the simulation again, with the average fit
+                #Get the rmse for that initial state
+                rmse_testr, test_condition, steps_per_cond, rmse_delay\
+                                = simulate_ekf(subject,
+                                                initial_state_no_gf,
+                                                initial_state_covariance_avg,
+                                                Q_AVG_DIAG, R,
+                                                average_subject_lower_limit,
+                                                average_subject_upper_limit,
+                                                plot_local=RT_PLOT,
+                                                use_subject_average=True,
+                                                calculate_gf_after_step=True,
+                                                heteroschedastic_model=\
+                                                    HETEROSCHEDASTHIC_MODEL)
+            if(DO_AVG):
+                #Create string to identify test case
+                TEST_NAME = "Average Model"
+
+                #Run the simulation again, with the average fit
+                #Get the rmse for that initial state
+                rmse_testr, test_condition, steps_per_cond, rmse_delay\
+                                = simulate_ekf(subject,                                             
+                                                initial_state_no_gf,
+                                                initial_state_covariance_avg,
+                                                Q_AVG_DIAG, R,
+                                                average_subject_lower_limit,
+                                                average_subject_upper_limit,
+                                                plot_local=RT_PLOT,
+                                                use_subject_average=True,
+                                                heteroschedastic_model=\
+                                                    HETEROSCHEDASTHIC_MODEL)
+
             
-            #Add to the rmse dict
-            subject_to_rmse_avg_dict[subject].append(rmse_testr)
+            if(DO_LS_GF):
+                #Create string to identify test case
+                TEST_NAME = "Offline Least Squares Gait Fingerprint"
+
+                
+                #Run the simulation again, with the average fit
+                #Get the rmse for that initial state
+                rmse_testr, test_condition, steps_per_cond, rmse_delay\
+                                = simulate_ekf(subject,
+                                                initial_state_no_gf,
+                                                initial_state_covariance_avg,
+                                                Q_AVG_DIAG, R,
+                                                average_subject_lower_limit,
+                                                average_subject_upper_limit,
+                                                plot_local=RT_PLOT,
+                                                use_ls_gf=True, 
+                                                heteroschedastic_model=\
+                                                    HETEROSCHEDASTHIC_MODEL)
+
+            #Store results for the subject with the first element being the
+            # subject name and the rest being the states
+            results = [subject] + [rmse_testr[i] for i in range(NUM_STATES)]
+
+            #Store results for each subject
+            subject_results.append(results)
         
-        if(DO_LS_GF):
-            
-            #Wait until the other plot is done to start
-            if(RT_PLOT==True):
-                input("Press enter when plot is done updating")
+            #Print which test we are doing once
+            if(subject_index == 0):
+                print(f"Doing test {TEST_NAME}")
 
-            #Run the simulation again, with the average fit
-            #Get the rmse for that initial state
-            rmse_testr, ls_gf = simulate_ekf(subject, initial_state_no_gf, initial_state_covariance_avg, Q_avg_diag, R_scaled, 
-                                      average_subject_lower_limit, average_subject_upper_limit, plot_local=RT_PLOT, 
-                                      use_ls_gf=True)
+    #Show that we have finished
+    print("Done")
 
-            print(f"\n\r  {i:02} {subject} ls gf system rmse {rmse_testr} initial state")
-            print(f"Norm of ls-gf  {ls_gf}")
-            #Add to the rmse dict
-            subject_to_rmse_avg_dict[subject].append(rmse_testr)
+    ###########################################################################
+    ###########################################################################
+    # Send Data to google sheets
+    #If you do not want it to be saved in the main sheet
+    if SAVE_TO_GOOGLE_SHEETS is True:
 
-        #Add the least squares solutoin
-        ls_gf_list.append(ls_gf)
+        #If we are doing calibrations, save to separate sheet
+        if UPDATE_COVAR_BETWEEN_SUBJECTS is True:
+            google_worksheet = calibration_worksheet
 
-print("Done")
-print(subject_to_rmse_gf_dict)
-print(subject_to_rmse_avg_dict)
+        #Create helper function to convert numpy arrays into json format
+        np_to_json = lambda arr: json.dumps(arr.tolist())
 
-save_content = [model,
-                initial_conditions,
-                subject_to_rmse_gf_dict,
-                subject_to_rmse_avg_dict,
-                ls_gf_list,
-                [Q_gf,R_scaled],
-                [Q_avg,R_scaled]]
+        #Create function to normalize colors to how google sheets expects [0-1]
+        nc = lambda color: color/255.0
 
-with open('sim_rmse_results.pickle', 'wb') as handle:
-    pickle.dump(save_content, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        #Create function that formats updated range field that is sent back
+        # when append_row is called
+        format_range = lambda range: range[range.index('!')+1:]
 
+        #Create the header to store results
+        google_sheet_test_metadata_dict = OrderedDict([
+            ("Experiment", 
+                TEST_NAME),
+            ("Process Model Phase Noise", 
+                PHASE_VAR),
+            ("Process Model Phase_Rate Noise", 
+                PHASE_DOT_VAR),
+            ("Process Model Stride Length Noise", 
+                STRIDE_LENGTH_VAR),
+            ("Process Model Ramp Noise", 
+                RAMP_VAR),
+            ("Process Model Gait Fingerprint Noise",
+                GF_VAR), 
+            ("Number of Gait Fingerprints",
+                NUM_GAIT_FINGERPRINTS),
+            ("State Names",
+                json.dumps(STATE_NAMES)),
+            ("Measurement Model",
+                json.dumps(JOINT_NAMES)),
+            ("Initial Condition",
+                np_to_json(initial_conditions)),
+            ("Initial Covariance",
+                np_to_json(initial_state_covariance)),
+            ("Heteroschedastic Model",
+                HETEROSCHEDASTHIC_MODEL),
+            ("Test Conditions (Incline, Speed)",
+                json.dumps(test_condition)),
+            ("Steps per Condition",
+                steps_per_cond),
+            ("Date",
+                str(date.today())),
+        ])
 
+        #if you run a test without the gait fingerprint, adjust the parameters
+        # accordingly
+        if not (DO_GF is True or DO_GF_NULL is True):
 
-
-
-#Calibrations that I like 
-# gf_var =                1e-6 #for two gf, for three use 1e-7, for give use 5e-5
-# phase_var =             0   
-# phase_dot_var =         4e-7
-# stride_length_var =     6e-8 #for two gf, for three/five use 7e-8
-# ramp_var =              3e-5
-
-
-# #Measurement covarience, Innovation
-# r_diag = [12,36,12] + [15,38,15]
-
-# phase_basis = FourierBasis(6,'phase')
-# phase_dot_basis = HermiteBasis(2,'phase_dot')
-# ramp_basis = HermiteBasis(2,'ramp')
-# stride_basis = HermiteBasis(2,'stride_length')
-# l2_lambda = [0.2,0.01,0,0]
-
-#With heterschedastic model on
-#Two gait figerprints
-
-
-
-####################################################
-
-
-# #Process noise
-# gf_var =                1e-6
-# phase_var =             0   
-# phase_dot_var =         4e-7
-# stride_length_var =     7e-8
-# ramp_var =              3e-5
-
-
-# #Measurement covarience, Innovation
-# r_diag = [12,36,12] + [15,38,15]
-# R = np.diag(r_diag)*3
-
-
-# phase_basis = FourierBasis(9,'phase')
-# phase_dot_basis = HermiteBasis(2,'phase_dot')
-# ramp_basis = HermiteBasis(2,'ramp')
-# stride_basis = HermiteBasis(2,'stride_length')
-# l2_lambda = [0,0,0,0]
+            google_sheet_test_metadata_dict["Process Model Phase Noise"] \
+                = PHASE_VAR_AVG
+            google_sheet_test_metadata_dict["Process Model Phase_Rate Noise"] \
+                = PHASE_DOT_VAR_AVG
+            google_sheet_test_metadata_dict["Process Model Stride Length Noise"] \
+                = STRIDE_LENGTH_VAR_AVG
+            google_sheet_test_metadata_dict["Process Model Ramp Noise"] \
+                = RAMP_VAR_AVG
+            google_sheet_test_metadata_dict["Process Model Gait Fingerprint Noise"] \
+                = "N/A"
+            google_sheet_test_metadata_dict["Number of Gait Fingerprints"] \
+                = "N/A"
 
 
-#With heterschedastic model on
-#One gait figerprints
+        #Convert ordered dict into two lists
+        google_sheet_test_header = \
+            list(google_sheet_test_metadata_dict.keys())
+        google_sheet_test_description_data = \
+            list(google_sheet_test_metadata_dict.values())
+
+        #Add header for the test metadata
+        metadata_row1_info = google_worksheet.append_row(google_sheet_test_header)
+        #Add test metadata
+        metadata_row2_info = \
+            google_worksheet.append_row(google_sheet_test_description_data)
+
+        #Add a line for comments for the experiment 
+        # I'm leaving three columns blank so that the comment can be seen clearly
+        # without needing the merge columns
+        google_worksheet.append_row(['Experiment Comment',
+                                    experiment_comment,'','','',
+                                    'Results Comments'])
+
+
+        #Create the subject trial metadata
+        google_sheet_subject_trial_header = [
+            "Subject",
+            "Phase RMSE",
+            "Phase Dot RMSE",
+            "Stride Length RMSE",
+            "Ramp RMSE"
+        ] 
+
+        #Add trial header to display test results
+        google_worksheet.append_row(google_sheet_subject_trial_header)
+        #Add subject trial for all the subjects
+        for trial in subject_results:
+            google_worksheet.append_row(trial)
+
+        #Add mean and variance information
+        #First, remove the name from each of the subjects
+        subject_results_without_names = [trial[1:] for trial in subject_results]
+        #Convert into a numpy array
+        results_results_np = np.array(subject_results_without_names)\
+                                    .reshape(len(subject_list),NUM_STATES)
+
+        #Get mean and variance from numpy built in functions
+        mean_per_state = np.mean(results_results_np,axis=0)
+        var_per_state = np.var(results_results_np,axis=0)
+
+        #Add text header
+        mean_with_header = ["Mean"] + [mean_per_state[i] for i in range(NUM_STATES)]
+        var_with_header = ["Variance"] + [var_per_state[i] for i in range(NUM_STATES)]
+
+        #Save to google sheets and store the reply information
+        mean_update_info = google_worksheet.append_row(mean_with_header)
+        var_update_info = google_worksheet.append_row(var_with_header)
 
 
 
-#Doing higher powers than 2 in the models not worth it for phase
+        #Add formatting to the metadata so that it is easy to distinguish tests from
+        # one another. Format after the data has been stored to be robust against 
+        # formatting errors crashing the program
+
+
+        #Define the light grey color for the two metadata rows
+        light_grey = {"red":nc(239.0), "green":nc(239.0), "blue":nc(239.0)}
+        #Create the metadata format
+        meatadata_format = {"backgroundColorStyle":{"rgbColor":light_grey}}
+        #Get the rows that will be updated for the first row
+        metadata_row1_range = metadata_row1_info['updates']['updatedRange']
+        #Remove the worksheet from the name
+        metadata_row1_range = format_range(metadata_row1_range)
+        #Update metadata row 1 to have light grey background
+        google_worksheet.format(metadata_row1_range,meatadata_format)
+        #Get the rows that will be updated for the second row
+        metadata_row2_range = metadata_row2_info['updates']['updatedRange']
+        #Remove the worksheet from the name
+        metadata_row2_range = format_range(metadata_row2_range)
+        #Update metadata row 2 to have light grey background
+        google_worksheet.format(metadata_row2_range,meatadata_format)
+
+
+        # Format the mean so it is easier to read
+        #Get the range to update
+        mean_update_range = mean_update_info['updates']['updatedRange']
+        #Remove the worksheet name from the range
+        mean_update_range = format_range(mean_update_range)
+        #Define the rgb values for light green
+        light_green = {"red":nc(217.0),"green":nc(234.0),"blue":nc(211.0)}
+        #Define the google sheets format dictionary
+        mean_format = {"backgroundColor":light_green}
+        #Send the request
+        google_worksheet.format(mean_update_range,mean_format)
+
+
+        # Format the variance so it is easier to read
+        #Get the range to update
+        var_update_range = var_update_info['updates']['updatedRange']
+        #Remove the worksheet name from the range
+        var_update_range = format_range(var_update_range)
+        #Define the rgb values for light red
+        light_red = {"red":nc(244.0),"green":nc(204.0),"blue":nc(204.0)}
+        #Define the google sheets format dictionary
+        var_format = {"backgroundColor":light_red}
+        #Send the request
+        google_worksheet.format(var_update_range,var_format)
+
+
+        #Print confirmation
+        print("Saved results to google sheets")
+
+    #If we are not saving the test that we are doing online, make sure to 
+    # save the text description offline
+    else:
+        
+        #Write to the local file for storing test cases
+        with open("offline_test_results.txt", "w") as offline_test_logger:
+            offline_test_logger.write(f"{str(date.today())}: {experiment_comment}")
