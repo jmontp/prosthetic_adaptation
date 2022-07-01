@@ -21,7 +21,8 @@ class Extended_Kalman_Filter:
                  lower_state_limit: np.ndarray = None, 
                  upper_state_limit: np.ndarray = None,
                  use_subject_average_fit: bool = False,
-                 use_least_squares_gf: bool = False):
+                 use_least_squares_gf: bool = False,
+                 heteroschedastic_model: bool = False):
         """
         Create the extended Kalman filter object
 
@@ -52,6 +53,7 @@ class Extended_Kalman_Filter:
         
         use_subject_average: determines if the subject average for the personal kronecker model will be used 
                              instead of the gait fingerprints as states
+        heteroschedastic_model: Use the measurement model heteroshedastic model
         """
 
         #Assign internal variables
@@ -69,7 +71,8 @@ class Extended_Kalman_Filter:
         self.calculated_measurement_ = None
         self.num_states = initial_state.shape[0]
         self.use_subject_average_fit = use_subject_average_fit
-        
+        self.heteroschedastic_model = heteroschedastic_model
+
         #Optional, output model
         self.output_model = output_model
         
@@ -118,7 +121,8 @@ class Extended_Kalman_Filter:
         #When you are not in phase = [0.2,0.4], don't update ramp
         Q = self.Q
         R = self.R
-        if (self.x[0] > 0.95 or self.x[0] < 0.05):
+        if (self.x[0] > 0.95 or self.x[0] < 0.05) \
+                and self.heteroschedastic_model:
             # Q = self.Q_h
             R = self.R_h
 
