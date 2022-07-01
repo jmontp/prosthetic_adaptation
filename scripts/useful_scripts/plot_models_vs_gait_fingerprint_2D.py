@@ -18,8 +18,8 @@ from kmodel.personalized_model_factory import PersonalizedKModelFactory
 
 ####################################################
 ####################################################
-PLOT_EFFECT_OF_GF = False
-PLOT_GF_VS_AVERAGE_VS_DATA = True
+PLOT_EFFECT_OF_GF = True
+PLOT_GF_VS_AVERAGE_VS_DATA = False
 ####################################################
 ####################################################
 
@@ -43,7 +43,7 @@ factory = PersonalizedKModelFactory()
 
 subject_model = "AB09"
 
-model_dir = f'../../data/kronecker_models/left_one_out_model_{subject_model}.pickle'
+model_dir = f'../../data/kronecker_models/left_one_out_model_{subject_model}_null.pickle'
 
 model = factory.load_model(model_dir)
 
@@ -91,7 +91,7 @@ std_list =  [total_data[output_name].values.reshape(-1,150).std(axis=0) for outp
 
 
 #Calculate the predicted joint angles 
-states_names = ['phase','phase_dot','stride_length']
+states_names = ['phase','phase_dot','stride_length','ramp']
 states_np = total_data[states_names].values
 average_fit_output = model.evaluate(states_np,use_average_fit=True)
 personalized_fit_output = model.evaluate(states_np,use_personalized_fit=True)
@@ -111,12 +111,12 @@ personalized_fit_thigh_std = get_std_strides(personalized_fit_output)
 
 #Define a arrays
 phase_np = np.linspace(0,1,150)
-gf_np = [-10,0,10]
+gf_np = [-100,0,100]
 colors = ['red', 'green','blue']
 
 #Define input list without one gait fingeprint and the others set as zero
 input_list = [phase_np, [phase_dot], [stride_length], 
-                                                    #[ramp]
+                                                    [ramp]
                                                     ] + [[0]]*(num_gait_fingerprints-1)
 
 #Create all the permutations of the inputs based on the number of gaint fingerprints
