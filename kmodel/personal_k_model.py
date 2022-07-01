@@ -1,37 +1,43 @@
 """
 This class creates a personalized K-model instance 
 """
+import numpy as np
 
 #Common imports
 from .k_model import KroneckerModel
-import numpy as np
-import pandas as pd
+
 
 #Import kronecker model for annotation purposes
 
 class PersonalKModel():
-    """This class holds a reference to a kronecker model and 
+    """This class holds a reference to a kronecker model and
         a personalization map"""
 
-    def __init__(self, kronecker_model: KroneckerModel, personalization_map: np.ndarray, average_fit: np.ndarray, output_name: str,
-                 gait_fingerprint: np.ndarray = None, 
+    def __init__(self, kronecker_model: KroneckerModel,
+                 personalization_map: np.ndarray,
+                 average_fit: np.ndarray,
+                 output_name: str,
+                 gait_fingerprint: np.ndarray = None,
                  subject_name: np.ndarray = None,
                  average_model_residual:np.ndarray = None,
-                 l2_lambda:float = None):
+                 l2_lambda:float = None,
+                 diff_from_average_matrix:np.ndarray = None):
         """
         Initialize the PersonalKModel Object
 
         Keyword arguments:
         kronecker_model -- KroneckerModel object
-        personalization_map -- Numpy array with shape 
+        personalization_map -- Numpy array with shape
                               (num_gait_fingerprints, model_output_size)
-        average_fit -- Numpy array with 
+        average_fit -- Numpy array with
                        shape (1, model_output_size)
-        gait_fingerprint -- an individual's optimized gait fingerprint with 
+        gait_fingerprint -- an individual's optimized gait fingerprint with
                             shape(1,model_output_size)
         subject_name -- string of the subject name
-
-        average_model_residual -- stores the average model residual across different subjects
+        average_model_residual -- stores the average model residual across
+                                  different subjects
+        diff_from_average_matrix -- stores the matrix used to generate the
+                                    personalization map
         """
         #Get the model and the amount of functions
         self.model = kronecker_model
@@ -40,7 +46,10 @@ class PersonalKModel():
         #Get the personalization_map
         self.pmap = personalization_map
         self.num_gait_fingerpints = personalization_map.shape[0]
-    
+        
+        #Store the matrix that was used to generate the personalization map
+        self.diff_from_average_matrix = diff_from_average_matrix
+
         #If we have the personalized fit, add it as well
         self.average_fit = average_fit
         
@@ -76,37 +85,40 @@ class PersonalKModel():
         return self.model.evaluate(input_data)
 
 
-    def evaluate(self,input_data,use_personalized_fit=False, use_average_fit=False,kronecker_output=None):
+    def evaluate(self,input_data,use_personalized_fit=False,
+                 use_average_fit=False,kronecker_output=None):
         """
-        Evaluate a Kronecker Model multiplied by 
-            the (average fit plus personalization map times gait fingerprint) 
+        Evaluate a Kronecker Model multiplied by
+            the (average fit plus personalization map times gait fingerprint)
             which gives a scalar output
 
-        In the default behavior, it will use the gait fingerprint in the input_dataset,
-        which is a numpy array that has a column corresponding to each model input and 
-        then the gait fingerprints
+        In the default behavior, it will use the gait fingerprint in the
+        input_dataset, which is a numpy array that has a column corresponding
+        to each model input and then the gait fingerprints
         
-        The subject-average fit can also be used by setting use_average_fit to true
+        The subject-average fit can also be used by setting use_average_fit to
+        true
 
-        If the model was initialized with a subject gait fingerprint, use_personalized_fit
-        will override the gait fingerprint in the dataset for the least squares optimal gait fingerprint
-        for that subject
+        If the model was initialized with a subject gait fingerprint,
+        use_personalized_fit will override the gait fingerprint in the dataset
+        for the least squares optimal gait fingerprint for that subject
 
         Keyword arguments:
-        dataset -- numpy array that contains the model inputs and the gait fingeprints
+        dataset -- numpy array that contains the model inputs and the gait
+                   fingeprints.
                    shape (num_datapoints, num_models + num_gait_fingerprints)
                    
-        use_personalized_fit -- Boolean if true just use the fit for 
-                                the subject that was initialized in 
+        use_personalized_fit -- Boolean if true just use the fit for
+                                the subject that was initialized in
         use_average_fit -- Boolean, if true just use the average fit
-        kronecker_output -- kronecker model output can be feed in externally 
+        kronecker_output -- kronecker model output can be feed in externally
                             to speed up calculations
 
         Returns
         output -- evaluated personalized kronecker model output
                   shape (num_datapoints,1)
 
-        Notes: 
+        Notes:
         user_personalized_fit takes precedence over use_average_fit
         
         e.g. if user_personalized_fit is true, it does not matter what
@@ -137,13 +149,15 @@ class PersonalKModel():
             #Get the number of datapoints
             num_datapoints = input_data.shape[0]
             
-            #To not include personalization, just set the gait fingerprints 
+            #To not include personalization, just set the gait fingerprints
             # to zero
-            gait_fingerprints = np.zeros((num_datapoints,self.num_gait_fingerpints))
+            gait_fingerprints = np.zeros((num_datapoints,
+                                          self.num_gait_fingerpints))
 
         #Get the personalized vector
         # shape (num_datapoints, output_model_size)
-        personalization_vector = self.average_fit + gait_fingerprints @ self.pmap
+        personalization_vector = self.average_fit + \
+                                 gait_fingerprints @ self.pmap
 
         ## Reshape in order to get the output of the shape (num_datapoints, 1)
 

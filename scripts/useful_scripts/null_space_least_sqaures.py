@@ -67,10 +67,10 @@ for subject in subject_list:
         ## Create constraints for all the states
 
         #Set the constraints for ramp for the nullspace projection
-        ramp_constraints = np.array([-10,-7.5,-5,0,5,7.5,10])
+        ramp_constraints = np.array([-10, -7.5, -5, 0, 5, 7.5, 10])
 
         #Get equidistant points in stride length
-        stride_length_constraints = np.array([0.8,1.0,1.2,1.4])
+        stride_length_constraints = np.array([0.8, 1.0, 1.4])
 
         #Set the constraints for ramp
         # phase_dot_constraints = np.array([1.0,1.4])
@@ -131,45 +131,76 @@ for subject in subject_list:
             comb_row_repeat = np.repeat(constraint_combinations[[comb_row_i],:]
                                           , NUM_PHASE_POINTS, axis=0)
 
-            #Create the constrait vector with all the phases required for 
-            # numerical integration. 
+            #Create the constrait vector with all the phases required for
+            # numerical integration.
             constraint_combinations_phase =  \
-                np.concatenate([phase_constraints_integration,comb_row_repeat],axis=1)
+                np.concatenate([phase_constraints_integration,
+                                comb_row_repeat],axis=1)
 
-            #Iterate through all the constraints with phase added in
-            for phase_comb_i in range(NUM_PHASE_POINTS):    
-                
-                #Get the current constraint
-                curr_const = constraint_combinations_phase[[phase_comb_i],:]
+            #Calculate the model output
+            A = kronecker_model\
+                .evaluate(constraint_combinations_phase)
 
-                #Calculate the model output
-                A = kronecker_model.evaluate(curr_const)
+            #Calculate the model output with a derivative
+            A_diff = kronecker_model\
+                .evaluate_derivative(constraint_combinations_phase)
 
-                #Calculate the model output with a derivative
-                A_diff = kronecker_model.evaluate_derivative(curr_const)
+            #For every combination row there are several partials that are
+            #intervewaved in
+            M_i_offset = comb_row_i*NUM_STATES_PARTIAL
 
-                #For every combination row there are several partials that are
-                #intervewaved in
-                M_i_offset = comb_row_i*NUM_STATES_PARTIAL
+            #We get the partial derivatives in A, have to index it out
+            for state_i in range(NUM_STATES_PARTIAL):
 
-                #We get the partial derivatives in A, have to index it out
-                for state_i in range(NUM_STATES_PARTIAL):    
-                
-                    #Partial derivative of Ith state
-                    A_diff_state_i = A_diff[state_i,:]
+                #Partial derivative of Ith state
+                A_diff_state_i = A_diff[NUM_PHASE_POINTS*state_i:
+                                        NUM_PHASE_POINTS*(state_i+1),:]
 
-                    #Add to the integral aggregator
-                    M[M_i_offset + state_i,:] += \
-                        average_fit @ A_diff_state_i.T @ A / NUM_PHASE_POINTS
+                #Calculate and set the integral for this condition 
+                M[M_i_offset + state_i,:] = \
+                    average_fit @ A_diff_state_i.T @ A / NUM_PHASE_POINTS
 
             #Print rank just to make sure it goes up to full rank to invert
-            print(f"M rank {np.linalg.matrix_rank(M)}")
+            # print(f"M rank {np.linalg.matrix_rank(M)}")
+
+        #we will calculate M_null using SVD due to numericall instability
+        u,s,v = np.linalg.svd(M)
+        
+        #reconstruct the proper matrix version of s since numpy provides a flat
+        # list with all the singular values
+        #Initialize matrix with the correct shape of zeros
+        s_mat = np.zeros(M.shape)
+        #The singular values have the same size as the smallest dimension of M
+        # This corresponds to the number of constraints that we have
+        s_mat[:num_constraints,:num_constraints] = np.diag(s)
 
         #Get the change of basis into the new shape
-        M_null = np.eye(M.shape[1]) - M.T @ np.linalg.inv(M @ M.T) @ M
+        # M_null = np.eye(M.shape[1]) - M.T @ np.linalg.pinv(M @ M.T,rcond=2.2e-16*M.shape[0]*np.max(M)) @ M
+        M_null = np.eye(M.shape[1]) - \
+            v.T @ s_mat.T @ np.linalg.inv(s_mat @ s_mat.T) @ s_mat @ v
+
+
+        #Verify that M @ M.T is invertible
+        # M_Mt_invertible = \
+        #     np.linalg.norm(np.eye(M.shape[0]) @ M - M@M.T @ np.linalg.pinv(M@M.T,hermitian=True,rcond=2.2e-16*M.shape[0]*np.max(M)) @ M)
+        # assert  M_Mt_invertible < 1e-5 ,\
+        #     f"M @ M.T is not invertible, with norm {M_Mt_invertible}"
+
+        #Verify that the Null space projection metric is symmetric
+        M_symmetric_norm = np.linalg.norm(M_null - M_null.T)
+        assert  M_symmetric_norm< 1e-5, \
+            f"Projection Matrix is not symmetric, with norm {M_symmetric_norm}"
+
 
         #Calculate the difference from the average
-        djff_from_avg_new_basis = (djff_from_avg @ M_null)
+        djff_from_avg_new_basis = (M_null @ djff_from_avg.T).T
+
+        #Validate that the nullspace projection worked
+        # map components are in the nullspace of M
+        pmap_projection_norm = np.linalg.norm(M @ djff_from_avg_new_basis.T)
+
+        assert pmap_projection_norm < 1e-5, \
+            f"Pmap projection with magnitude {pmap_projection_norm}"
 
         #Initialize pca fitter
         pca_fitter = PCA(n_components=NUM_GF)
@@ -182,11 +213,8 @@ for subject in subject_list:
         #Set the pmap to the model
         personal_kronecker_model_i.set_pmap(pmap_null)
 
-        #Validate that the personalization map components are in the nullspace
-        # of M
-        pmap_projection_norm = np.linalg.norm(pmap_null @ M)
+       
 
-        assert pmap_projection_norm < 1e-7
 
     #Create the save location with slightly different name
     model_save_dir = (f'../../data/kronecker_models/'
