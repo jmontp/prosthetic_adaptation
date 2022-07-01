@@ -12,3 +12,4 @@ model_fitting/*.pickle
 *.egg-info
 scripts/useful_scripts/media/*
 scripts/useful_scripts/Figures/*
+*.npy
