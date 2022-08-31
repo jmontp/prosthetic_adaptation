@@ -358,6 +358,9 @@ def add_global_shank_angle():
         df = pd.read_parquet(subject[1])
         # print(df.columns)
 
+        #The foot angles recorded are in a right hand coordinate frame. Invert them
+        df['jointangles_foot_x'] = -1*df['jointangles_foot_x']
+
         # Create the shank angles based on foot and ankle
 
         # df.drop(columns=['jointangle_shank_x','jointangle_shank_y','jointangle_shank_z'])
@@ -436,35 +439,111 @@ def add_global_shank_angle():
 
         #remove outliers
         remove_outliers(df,'jointangles_foot_dot_x',1000,-1000)
+        assert len(df.index) > 0
         remove_outliers(df,'jointangles_hip_dot_x',390,-170)
+        assert len(df.index) > 0
         remove_outliers(df,'jointangles_shank_dot_x',1000,-1000)
-        remove_outliers(df,'jointangles_foot_x',  -0.2)
-        remove_outliers(df,'jointangles_shank_x',-0.2)
-
+        assert len(df.index) > 0
+        # remove_outliers(df,'jointangles_foot_x',  -0.2)
+        # assert len(df.index) > 0
+        # remove_outliers(df,'jointangles_shank_x',-0.2)
+        # assert len(df.index) > 0
 
         #Offset the foot angles by average phase in midstance at zero ramp
         #We are assuming mid stance is 15-30 phase
-        # foot_offset_mask = (df['ramp']==0) & (df['phase'] > 0.15) & (df['phase'] < 0.36)
-        # average_foot_angle = df[foot_offset_mask]['jointangles_foot_x'].mean()
-        # df['jointangles_foot_x'] = df['jointangles_foot_x'] - average_foot_angle
-        # df['jointangles_shank_x'] = df['jointangles_shank_x'] - average_foot_angle
-        # df['jointangles_thigh_x'] = df['jointangles_thigh_x'] - average_foot_angle
+        foot_offset_mask = (df['ramp']==0) & (df['phase'] > 0.15) & (df['phase'] < 0.36)
+        average_foot_angle = df[foot_offset_mask]['jointangles_foot_x'].mean()
+        df['jointangles_foot_x'] = df['jointangles_foot_x'] - average_foot_angle
+        df['jointangles_shank_x'] = df['jointangles_shank_x'] - average_foot_angle
+        df['jointangles_thigh_x'] = df['jointangles_thigh_x'] - average_foot_angle
 
         #Doing this after the fact since the plots showed that no actual value was over 170 after substracting the mean value
-        remove_outliers(df,'jointangles_thigh_x',170)
+        # remove_outliers(df,'jointangles_thigh_x',170)
 
 
-        speed_list = [0.8,1.0,1.2]
-        find_min_stride = lambda dataset: min([((dataset.speed == speed) & (dataset.ramp==0.0)).sum() for speed in speed_list])
-        print(f"{subject[0]} min strides {find_min_stride(df)/150}")
+        # speed_list = [0.8,1.0,1.2]
+        # find_min_stride = lambda dataset: min([((dataset.speed == speed) & (dataset.ramp==0.0)).sum() for speed in speed_list])
+        # print(f"{subject[0]} min strides {find_min_stride(df)/150}")
 
         df.to_parquet(subject[1])
 
 
+def fix_stride_length():
+    """
+    This function fixes the stride length to be based on toe off and heel 
+    strike that is detected using the ground reaction forces
+    """
+    #Save file location for file that have phase condition added to them
+    save_file_location = ("../../data/flattened_dataport/"
+                          "dataport_flattened_partial_{}.parquet")
+
+    #Iterate through all the subjects
+    for subject in [f"AB{i:02d}" for i in range(1,11)]:
+
+        print(f"Doing subject {subject}")
+
+        #Get the file for the specific subject
+        subject_file = save_file_location.format(subject)
+
+        #load the parquet datafile
+        subject_data = pd.read_parquet(subject_file)
+        
+        #Markers
+        markers_y = subject_data['markers_heel_y']
+
+        #Get the data for force plate
+        forceplate_z = subject_data['forceplate_force_z'] \
+                       / np.cos(np.deg2rad(subject_data['ramp']))
+
+        norm_forceplate = forceplate_z / min(forceplate_z)
+
+        #This is the cutoff for detecting heel strike and toe off
+        DETECTION_THRESH = 0.20
+
+        #Filter for heel strike or toe off
+        #2389.0
+        is_in_swing = ((norm_forceplate > DETECTION_THRESH)*1)\
+                       .diff()
+
+        #Get the heel strikes as the transition from stance (0) to swing (1)
+        # since the differentiation generates 1, compare to 1
+        heel_strikes = is_in_swing == 1
+        heel_strikes.iloc[-1] = False
+
+        #Get the toe off as the transition from swing (1) to stance (0)
+        # since the differentiation generates -1, compare to -1        
+        toe_off = is_in_swing == -1
+
+        #Get the stride length for every step
+        stride_length_per_step = np.abs(markers_y[heel_strikes].values
+                                        - markers_y[toe_off].values)
+        
+        #Convert from cm to m
+        stride_length_per_step = stride_length_per_step/1000
+
+        #Filter the bad steps by using a minimum stride length
+        MIN_STRIDE_LENGTH = 0.200
+        stride_length_per_step = stride_length_per_step[ \
+            stride_length_per_step > MIN_STRIDE_LENGTH]
+
+
+        assert stride_length_per_step.shape[0] == int(forceplate_z.size/150),\
+            (f"Have {stride_length_per_step.shape[0]}, "
+               f"expected {int(forceplate_z.size/150)}")
+
+        stride_reshape = np.repeat(stride_length_per_step,150)
+
+        subject_data['stride_length'] = stride_reshape
+        subject_data.to_parquet(subject_file)
+        print(f"saved {subject}")
+        pass
+        
+
 # %%
 if __name__ == '__main__':
-    quick_flatten_dataport()
+    # quick_flatten_dataport()
     add_global_shank_angle()
+    fix_stride_length()
     #determine_different_strides()
     #determine_zero_data_strides()
     pass

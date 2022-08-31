@@ -39,7 +39,10 @@ class PersonalMeasurementFunction:
         self.num_gait_fingerprint = models[0].num_gait_fingerpints
 
 
-    def evaluate(self, input_data, use_personalized_fit = False, use_average_fit=False):
+    def evaluate(self, input_data:np.ndarray, 
+            use_personalized_fit:bool = False, 
+            use_average_fit:bool=False,
+            use_optimal_fit:bool=False):
         """
         Evaluate a Kronecker Model multiplied by 
             the (average fit plus personalization map times gait fingerprint) 
@@ -92,6 +95,7 @@ class PersonalMeasurementFunction:
             output_buffer[:,[i]] = kmodel.evaluate(input_data, 
                                                    use_personalized_fit = use_personalized_fit, 
                                                    use_average_fit = use_average_fit,
+                                                   use_optimal_fit = use_optimal_fit,
                                                    kronecker_output=kronecker_output).reshape(num_datapoints,1)
 
         return output_buffer

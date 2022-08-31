@@ -29,6 +29,40 @@ np.set_printoptions(linewidth=10000)
 #Make it so that the positive numbers take the same amount as negative numbers
 # np.set_printoptions(sign=' ')
 
+def low_pass_filter(adata: np.ndarray,
+                     bandlimit: int = 20,
+                     sampling_rate: int = 100) -> np.ndarray:
+        """
+        Low pass filter implementation by Iwohlhart
+        https://stackoverflow.com/
+        questions/70825086/python-lowpass-filter-with-only-numpy
+
+        Keyword Arguments
+        adata -- the data that will be filtered
+            Data type: np.ndarray with no specific range
+        bandlimit -- the bandwidth limit in Hz
+            Data type: int
+        sampling_rate -- the sampling rate of the data
+            Data type: int
+
+        Returns
+        filtered_data
+            Data type: np.ndarray
+        """
+        
+        # translate bandlimit from Hz to dataindex according to
+        # sampling rate and data size
+        bandlimit_index = int(bandlimit * adata.size / sampling_rate)
+    
+        fsig = np.fft.fft(adata)
+        
+        for fourier_i in range(bandlimit_index + 1,
+                               len(fsig) - bandlimit_index ):
+            fsig[fourier_i] = 0
+            
+        adata_filtered = np.fft.ifft(fsig)
+    
+        return np.real(adata_filtered)
 
 def phase_dist(phase_a, phase_b):
     # computes a distance that accounts for the modular arithmetic of phase
@@ -39,7 +73,7 @@ def phase_dist(phase_a, phase_b):
 
 def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                 state_lower_limit, state_upper_limit,
-                use_subject_average=False,use_ls_gf = False, calculate_gf_after_step=False,
+                use_subject_average=False,use_ls_gf = False, use_optimal_fit=False,calculate_gf_after_step=False,
                 plot_local=False,null_space_projection=False,
                 heteroschedastic_model=False):
 
@@ -66,12 +100,10 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     num_gait_fingerprints = measurement_model.personal_model.num_gait_fingerprint
 
     #Get the number of states
-    if use_subject_average == True or use_ls_gf == True:
-        num_states = initial_state.size
-    else:
-        num_states = initial_state.size - num_gait_fingerprints
+    num_states = model.num_states
 
-
+    #Get the number of measurements
+    num_measurements = model.num_kmodels
 
     #Real time plotting configuration
     X_AXIS_POINTS = 1000
@@ -83,7 +115,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                     'title': "Phase",
                     'xlabel': "reading (unitless)",
                     'ylabel': 'Varied',
-                    'yrange': [2.5,-0.5],                
+                    'yrange': [1.5,-0.5],                
                     'xrange':X_AXIS_POINTS
                     }
     plot_1b_config = {
@@ -94,7 +126,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                     'title': "Phase Dot, Stride Length",
                     'xlabel': "reading (unitless)",
                     'ylabel': 'Varied',
-                    'yrange': [0.8,1.5],
+                    'yrange': [0.2,1.2],
                     'xrange':X_AXIS_POINTS
 
                     }
@@ -119,7 +151,8 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                     'title': "Gait Fingerprint Vs Expected Gait Fingerprint",
                     'ylabel': "reading (unitless)",
                     'xlabel': 'STD Deviation',
-                    'yrange': [-20,20]
+                    'yrange': [-20,20],
+                    'xrange':X_AXIS_POINTS
                     }
 
     plot_4_config = {
@@ -147,17 +180,17 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
         if(use_subject_average == True or use_ls_gf == True):
             client.initialize_plots([plot_1a_config,
                                 plot_1b_config,
-                                plot_2_config, 
-                                #plot_3_config, 
-                                # plot_4_config, 
+                                plot_2_config,
+                                #plot_3_config,
+                                # plot_4_config,
                                 # plot_5_config,
                                 ])
         else:
             client.initialize_plots([plot_1a_config,
                             plot_1b_config,
-                            plot_2_config, 
-                            # plot_3_config, 
-                            # plot_4_config, 
+                            plot_2_config,
+                            plot_3_config,
+                            # plot_4_config,
                             # plot_5_config,
                             ])
 
@@ -192,6 +225,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                                         lower_state_limit=state_lower_limit, upper_state_limit=state_upper_limit,
                                         use_subject_average_fit=use_subject_average,
                                         use_least_squares_gf = use_ls_gf,
+                                        use_optimal_fit=use_optimal_fit,
                                         # output_model=output_model,
                                         heteroschedastic_model = heteroschedastic_model
                                         )
@@ -232,7 +266,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
 
 
     #Calculate the total number of datapoints
-    datapoints = points_per_condition * num_trials 
+    datapoints = points_per_condition * num_trials
 
     #Pre-allocate memory
     multiple_step_data = np.zeros((datapoints,len(model_names)))
@@ -283,6 +317,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
     #Initialize RMSE
     error_squared_acumulator = np.zeros((num_states))
     output_moment_accumulator = 0
+    measurement_error_acumulator = np.zeros((2*num_measurements))
 
     #State buffer
     predicted_state_buffer = np.zeros((total_datapoints,num_states))
@@ -302,6 +337,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
         predicted_state_buffer[i,:] = next_state[0,:num_states].copy()
 
         #Get the predicted measurements
+        predicted_measurements = ekf_instance.calculated_measurement_
         calculated_angles = ekf_instance.calculated_measurement_[:3]
         calculated_speeds = ekf_instance.calculated_measurement_[3:6]
 
@@ -314,6 +350,9 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
             #Add to the rmse accumulator
             error_squared_acumulator[0] += phase_dist(next_state[0,0], actual_state[0])
             error_squared_acumulator[1:] += np.power(next_state[0,1:num_states]-actual_state[1:], 2)
+
+            #Add to the measurement output acumulator
+            measurement_error_acumulator += np.power(predicted_measurements - curr_data, 2).reshape(-1)
 
             #Add the error for torque
             # output_moment_accumulator += np.power(next_output - multiple_step_ground_truth[i,-1],2)
@@ -354,7 +393,8 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                         #Calculate g for the last steps
                         #Get the state and data for the last steps
                         # regressor_state = predicted_state_buffer[i-calculate_gf_datapoints:i]
-                        regressor_state = multiple_step_ground_truth[i-calculate_gf_datapoints:i]
+                        regressor_state = low_pass_filter(predicted_state_buffer[i-calculate_gf_datapoints:i])
+                        # regressor_state = multiple_step_ground_truth[i-calculate_gf_datapoints:i]
                         regressor_joint_angles = multiple_step_data[i-calculate_gf_datapoints:i,[joint_index]]
                         #Calculate the regressor matrix that corresponds to that solution
                         regressor_matrix = joint_kmodel.model.evaluate(regressor_state)
@@ -385,7 +425,7 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
 
         #Decide to plot or not
         if(plot_local == True):
-            num_measurements = 1
+            plot_num_measurements = 1 #Select how many measurements, set to 1 to not transmit data
 
 
             #Both send measurements in case they are being plotted
@@ -397,9 +437,9 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                                             multiple_step_ground_truth[i,1:3].reshape(-1,1),    # phase_dot, stride_length from dataset
                                         next_state[0,3].reshape(-1,1),                     #ramp
                                         multiple_step_ground_truth[i,3].reshape(-1,1) ,    #ramp from dataset
-                                        curr_data[:num_measurements].reshape(-1,1),
+                                        curr_data[:plot_num_measurements].reshape(-1,1),
                                         calculated_angles.reshape(-1,1),
-                                        curr_data[num_measurements:].reshape(-1,1),
+                                        curr_data[plot_num_measurements:].reshape(-1,1),
                                         calculated_speeds.reshape(-1,1)
 
                                         ])
@@ -412,9 +452,9 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
                                             multiple_step_ground_truth[i,3].reshape(-1,1) ,    #ramp from dataset
                                             next_state[0,num_states:].reshape(-1,1),                    #gait fingerprints
                                             ls_gf.reshape(-1,1),                                #gait fingerprints from least squares 
-                                            curr_data[:num_measurements].reshape(-1,1),
+                                            curr_data[:plot_num_measurements].reshape(-1,1),
                                             calculated_angles.reshape(-1,1),
-                                            curr_data[num_measurements:].reshape(-1,1),
+                                            curr_data[plot_num_measurements:].reshape(-1,1),
                                             calculated_speeds.reshape(-1,1)
 
                                         ])
@@ -431,11 +471,13 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
         
         sys.stdout.write("\033[K")
         print((f'\r{i} out of {total_datapoints}'
-               f' rmse {np.sqrt(error_squared_acumulator/(i+1))}'
-            #    f' state {next_state}' 
+               f' state rmse {np.sqrt(error_squared_acumulator/(i+1))}'
+               f' measurement rmse {np.sqrt(measurement_error_acumulator/(i+1))}'
+            #    f' state {next_state}'
             #    f' expected state {multiple_step_ground_truth[i,:4]}'
             #    f' expected gf {ls_gf}'
-                f' predicted covariance {np.diagonal(predicted_covar)}')
+                # f' predicted covariance {np.diagonal(predicted_covar)}'
+            )
                ,end="")
         
 
@@ -444,9 +486,16 @@ def simulate_ekf(subject,initial_state, initial_state_covariance, Q, R,
 
     #Calculate the rmse
     rmse = np.sqrt(error_squared_acumulator/total_datapoints)
+
+    #Calculate the measurement rmse
+    measurement_rmse = np.sqrt(measurement_error_acumulator/(i+1))
     
     #Get the least squares gait fingerprint
     ls_gf = model.kmodels[0].subject_gait_fingerprint
 
-    return rmse, condition_list, num_steps_per_condition,track_rmse_after_steps
+    #Get the test id
+    test_id = np.load("test_id.npy")
+    client.save_plot(f"{subject}_TestID_{test_id:04}")
+
+    return rmse, measurement_rmse, condition_list, num_steps_per_condition,track_rmse_after_steps
 

@@ -10,11 +10,15 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 #TODO - It might be a good idea to implement numeric differentiation here
 
 
+from msilib.schema import Error
 from matplotlib.pyplot import axis
 import numpy as np
 
 
 class Basis:
+    """
+    This class is defined to have 
+    """
     def __init__(self, n, var_name):
         self.n = n
         self.var_name = var_name
@@ -33,11 +37,35 @@ class PolynomialBasis(Basis):
         Basis.__init__(self,n,var_name)
         self.size = n
         self.name = "Polynomial"
-        self.powers = np.arange(n)
-        self.one_array = np.ones((1,n))
+        #List of powers that every element in x will be evaluated to
+        self.__powers = np.arange(n)
+        self.__powers_copy = np.arange(n)
+        #Pre-allocate memory to 
+        self.__one_array = np.ones((1,n))
+        self.__one_array_copy = np.ones((1,n))
     #This function will evaluate the model at the given x value
-    def evaluate(self,x):
-        return np.power(x * self.one_array,self.powers)
+    def evaluate(self,x,derivative=0):
+        
+        
+        if derivative ==  0:
+            return np.power(x * self.__one_array,self.__powers)
+        
+        elif derivative > 0:
+            #Temprorarily change one array to zero out elements
+            # this avoids memory allocation in run time
+            self.__one_array[:derivative] = 0
+            #Get the correct power values using max, out argument places the 
+            # results in the powers matrix
+            self.__powers = np.max(0, self.__powers - derivative,
+                                    out=self.__powers)
+            out = np.power(x * self.__one_array,self.__powers)
+            #Reset values
+            self.__one_array[:] = self.__one_array_copy
+            self.__powers[:] = self.__powers_copy
+            
+            return out
+        else:
+            raise Error("Derivative must be greater than zero")
         #return np.polynomial.polynomial.polyvander(x, self.n-1)
 
 

@@ -38,7 +38,8 @@ class MeasurementModel():
 
     def evaluate_h_func(self,current_state:np.ndarray,
                         use_subject_average_fit:bool = False,
-                        use_least_squares_gf:bool = False):
+                        use_least_squares_gf:bool = False,
+                        use_optimal_fit:bool=False):
         """
         Evaluate the measurement function
 
@@ -62,13 +63,15 @@ class MeasurementModel():
 
         output = self.personal_model.evaluate(current_state.T, 
                                               use_average_fit=use_subject_average_fit,
-                                              use_personalized_fit=use_least_squares_gf)
+                                              use_personalized_fit=use_least_squares_gf,
+                                              use_optimal_fit=use_optimal_fit)
 
         if (self.calculcate_output_derivative == True):
             #Calculate the time derivative
             output_time_derivative = self.output_time_derivative(current_state, output, 
-                                                                 use_subject_average_fit,
-                                                                 use_least_squares_gf)
+                                                                 use_subject_average_fit=use_subject_average_fit,
+                                                                 use_least_squares_gf=use_least_squares_gf,
+                                                                 use_optimal_fit=use_optimal_fit)
             
             #Append to the output
             output = np.concatenate([output,output_time_derivative], axis=1)
@@ -79,7 +82,8 @@ class MeasurementModel():
 
     def evaluate_dh_func(self,current_state:np.ndarray,
                         use_subject_average_fit:bool = False,
-                        use_least_squares_gf:bool = False):
+                        use_least_squares_gf:bool = False,
+                        use_optimal_fit:bool = False):
         """
         Calculate the derivative at this current point in time
 
@@ -97,13 +101,14 @@ class MeasurementModel():
                            shape(num_outputs, 1)
         """
         #Use numerical method to calculate the jacobean 
-        result = self.numerical_jacobean(current_state,use_subject_average_fit,use_least_squares_gf)
+        result = self.numerical_jacobean(current_state,use_subject_average_fit,use_least_squares_gf,use_optimal_fit)
 
         return result
 
     def numerical_jacobean(self, current_state:np.ndarray,
                         use_subject_average_fit:bool = False,
-                        use_least_squares_gf:bool = False):
+                        use_least_squares_gf:bool = False,
+                        use_optimal_fit:bool = False):
 
         """
         Numerical differentiation algorithm
@@ -135,8 +140,9 @@ class MeasurementModel():
         #We are going to fill it element-wise
         #col represents the current state
         f_state = self.evaluate_h_func(current_state,
-                                       use_subject_average_fit,
-                                       use_least_squares_gf)
+                                       use_subject_average_fit=use_subject_average_fit,
+                                       use_least_squares_gf=use_least_squares_gf,
+                                       use_optimal_fit=use_optimal_fit)
 
         #Create buffer to store the result
         state_plus_delta = current_state.copy()
@@ -152,8 +158,9 @@ class MeasurementModel():
 
             #Evaluate the model and extract it 
             f_delta = self.evaluate_h_func(state_plus_delta,
-                                            use_subject_average_fit,
-                                            use_least_squares_gf)
+                                            use_subject_average_fit=use_subject_average_fit,
+                                            use_least_squares_gf=use_least_squares_gf,
+                                            use_optimal_fit=use_optimal_fit)
 
             #Get the derivative for the column
             manual_derivative[:,col] = ((f_delta-f_state)/(self.delta)).T
@@ -165,7 +172,8 @@ class MeasurementModel():
     def output_time_derivative(self, current_state: np.ndarray,
                                eval_at_current_state: np.ndarray,
                                use_subject_average_fit:bool=False,
-                               use_least_squares_gf:bool = False):
+                               use_least_squares_gf:bool = False,
+                               use_optimal_fit:bool = False):
         """
         This function will get the time derivative of the output functions 
 
@@ -188,9 +196,10 @@ class MeasurementModel():
         delta_state = current_state + delta_vector
         
         #Get the evaluation at the new phase
-        eval_at_delta_state = self.personal_model.evaluate(delta_state.T, 
+        eval_at_delta_state = self.personal_model.evaluate(delta_state.T,
                                                            use_average_fit=use_subject_average_fit,
-                                                           use_personalized_fit=use_least_squares_gf)
+                                                           use_personalized_fit=use_least_squares_gf,
+                                                           use_optimal_fit=use_optimal_fit)
 
         #Calculate the phase derivative
         phase_derivative = (eval_at_delta_state - eval_at_current_state)/self.delta

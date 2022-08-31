@@ -1,5 +1,13 @@
+"""
+This file is meant to test the function basis code
+"""
+
+#Common imports
 import numpy as np
 
+#My custom imports
+from context import kmodel
+from kmodel.function_bases import PolynomialBasis, FourierBasis
 
 
 def unit_test():
@@ -12,47 +20,28 @@ def unit_test():
     
     poly_basis = PolynomialBasis(exponents,'phase')
     
-    poly_evald = poly_basis.evaluate_derivative(values,0)
+    poly_evald = poly_basis.evaluate(values)
     
     print(evaluated)
     
     print(poly_evald)
     
-    #assert(np.linalg.norm(evaluated-poly_evald) < 1e-7)
+    assert(np.linalg.norm(evaluated-poly_evald) < 1e-7)
     
-    derivative = np.array([[0,1,4,12,24,80]])
     
-    poly_deri_evald = poly_basis.evaluate_derivative(values)
-    
-    print(derivative)
-    
-    print(poly_deri_evald)
-    
-    second_derivative = np.array([[0,0,2,12,48,160]])
-    
-    poly_second_deri = poly_basis.evaluate_derivative(values, 2)
-    
-    print(second_derivative)
-    
-    print(poly_second_deri)
-    
-    p3d = poly_basis.evaluate_derivative(values, 4)
-    
-    print(p3d)
-
-
-    exponent = 3
     
     x = np.array([[0.435]])
     
-    fourier = FourierBasis(exponent,'phase')
+    fourier = FourierBasis(1,'phase')
     
-    print("F evaluate: {}".format(fourier.evaluate(x)))
-    print("F first derivative evaluate: {}".format(fourier.evaluate_derivative(x,1)))
-    print("F sec derivative evaluate: {}".format(fourier.evaluate_derivative(x,2)))
-    print("F third derivative evaluate: {}".format(fourier.evaluate_derivative(x,3)))
+    expected_result = np.array([1,float(np.sin(2*np.pi*x)),float(np.cos(2*np.pi*x))])
+    fourier_result = fourier.evaluate(x)
+
+    print(f"F evaluate: {fourier_result}")
+    print(f"Expected {expected_result}")
 
     
+    assert(np.linalg.norm(fourier_result-expected_result) < 1e-7)
 
 
     
