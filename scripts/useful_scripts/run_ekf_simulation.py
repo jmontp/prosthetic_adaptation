@@ -61,7 +61,7 @@ sa = gspread.service_account()
 google_file = sa.open("EKF Simulation Results")
 
 #Get the worksheet
-google_worksheet = google_file.worksheet("Data")
+google_worksheet = google_file.worksheet("Incoming Data")
 calibration_worksheet = google_file.worksheet("Calibration Testing")
 
 #Get experiment information
@@ -203,8 +203,8 @@ N_INITIAL_CONDITIONS = 1
 #Setup Flags   
 
 #Different test scenarios, only have one set to true
-DO_GF = True
-DO_AVG = False 
+DO_GF = False
+DO_AVG = True 
 DO_GF_NULL = False
 DO_LS_GF = False
 DO_AFTER_GF = False
@@ -219,7 +219,7 @@ RT_PLOT = False
 UPDATE_COVAR_BETWEEN_SUBJECTS = False
 
 #Save to google sheets
-SAVE_TO_GOOGLE_SHEETS = True
+SAVE_TO_GOOGLE_SHEETS = False
 
 #Repeast Tests to converte the initial covariance
 NUM_REPEAT_TESTS = 1
