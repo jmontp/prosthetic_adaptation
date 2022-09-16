@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 #Import the model fitting library
-from .k_model_fitting import KModelFitter
+from .model_fitting.k_model_fitting import KModelFitter
 
 #Import personalized k model
 from .personal_k_model import PersonalKModel
@@ -31,27 +31,34 @@ class PersonalizedKModelFactory:
         pass
 
     def generate_personalized_model(self,k_model: KroneckerModel, 
-                                      subject_data_list: list, 
-                                      output_name: Union[str, List[str]],
-                                      num_pca_vectors: int = None, 
-                                      keep_subject_fit: str = None,
-                                      left_out_subject: Union[str, List[str]] = None,
-                                      vanilla_pca: Boolean = False,
-                                      l2_lambda: float = 0.0,
-                                      leave_out_model_name: str = None):
+            subject_data_list: list, 
+            output_name: Union[str, List[str]],
+            num_pca_vectors: int = None, 
+            keep_subject_fit: str = None,
+            left_out_subject: Union[str, List[str]] = None,
+            vanilla_pca: Boolean = False,
+            l2_lambda: float = 0.0,
+            leave_out_model_name: str = None):
         """
         This function will calculate the personalization map 
         and return a personalized k_model object
 
         Keyword Arguments
-        k_model -- kronecker model or list of kronecker model object to perform the fit into
-        subject_data_list -- list with tuples of the form (subject_name,pandas dataframe)
+        k_model -- kronecker model or list of kronecker model object to 
+            perform the fit into
+        subject_data_list -- list with tuples of the form 
+            (subject_name,pandas dataframe)
         output_name -- name of the output variable that will be used to fit
-        num_pca_vectors -- Int, The amount of pca vectors to use. If not, 95% will be used
-        keep_subject_fit -- string, the subject name that you want to set the personalized fit model to 
-        left_out_subject -- this(these) subject(s) will not be included in the personalization map calculation
+        num_pca_vectors -- Int, The amount of pca vectors to use. 
+            If not, 95% will be used
+        keep_subject_fit -- string, the subject name that you want to set 
+            the personalized fit model to 
+        left_out_subject -- this(these) subject(s) will not be included in 
+            the personalization map calculation
         l2_lambda -- regularized least squares lambda value
-        
+        leave_out_model_name -- used for models that are not included in the 
+            main personalized measurement function (such as torque output),
+            that want to be included in the personalization map calculation
         Returns
         p_model -- personalized kronecker model        
         fit_info -- the fit information per subject
@@ -59,13 +66,16 @@ class PersonalizedKModelFactory:
         
         #If we get a kronecker model (e.g. just one output), 
         # convert it into a list just to be consistent through the code
-        if isinstance(output_name, str) == True:
+        if isinstance(output_name, str) is True:
             output_name = [output_name]
         
         #Initialize the arrays to aggregate the fits, average_fits
         XI_0_list = []
         XI_average_list = []
         G_list = []
+
+        #Store the fits to initialize the models later
+        left_out_optimal_fit_dict = {}
 
         #Create an output to average model rmse error dictionary
         avg_rmse_per_output = {}
@@ -81,6 +91,8 @@ class PersonalizedKModelFactory:
             XI_output_list = []
             total_rmse_list =  []
 
+  
+
             #Initialize aggregator for the gram calculations for the subject
             RTR_aggregator = 0
             output_datapoints = 0
@@ -88,9 +100,7 @@ class PersonalizedKModelFactory:
             #Calculate the subject fit for every person
             for subject_name,subject_data in subject_data_list:
                 
-                #Skip if the subject name is in the left out pool
-                if subject_name in left_out_subject:
-                    continue
+               
                 
                 #Get the appropriate l2 regularization
                 if(isinstance(l2_lambda,list)):
@@ -102,6 +112,12 @@ class PersonalizedKModelFactory:
                 subject_fit, (fit_rmse, RTR, num_datapoints) = \
                     fitter.fit_data(k_model, subject_data, 
                                     output,l2_lambda=curr_l2_lambda)
+
+
+                #Skip if the subject name is in the left out pool
+                if subject_name in left_out_subject:
+                    left_out_optimal_fit_dict[output] = subject_fit
+                    continue
 
                 #Add it to the list of fits
                 XI_output_list.append(subject_fit)
@@ -192,8 +208,10 @@ class PersonalizedKModelFactory:
                     xi_avg = XI_average_list[i]
                     
                     #Get the regressor matrix for this model
-                    RTR_prime_j, RTy_prime_j = self._calculate_gait_fingerprint_regressor(k_model, subject_data, 
-                                                                                          output, pmap, xi_avg)
+                    RTR_prime_j, RTy_prime_j = \
+                        self._calculate_gait_fingerprint_regressor(k_model,
+                            subject_data,output, pmap, xi_avg)
+
                     #Add tho the solution matrix
                     RTR_prime_total += RTR_prime_j
                     RTy_prime_total += RTy_prime_j
@@ -214,22 +232,31 @@ class PersonalizedKModelFactory:
                 continue
 
             #Get the pmap and average fit for this model
-            pmap = pmap_aggregate[:,k_model_output_size*i:k_model_output_size*(i+1)]
+            pmap = pmap_aggregate[:,k_model_output_size*i:
+                                    k_model_output_size*(i+1)]
             xi_avg = XI_average_list[i]
+
+            #Get the appropriate l2 regularization
+            if(isinstance(l2_lambda,list)):
+                curr_l2_lambda = l2_lambda[i]
+            else:
+                curr_l2_lambda = l2_lambda
 
             #### Initialize and return the P model
             personalized_k_model = PersonalKModel(kronecker_model = k_model,
-                                                  personalization_map = pmap,average_fit = xi_avg,
-                                                  output_name = output, 
-                                                  gait_fingerprint = gait_fingerprint,
-                                                  subject_name = keep_subject_fit,
-                                                  average_model_residual=avg_rmse_per_output[output],
-                                                  l2_lambda=l2_lambda,
-                                                  diff_from_average_matrix=XI_0_list[i])
+                personalization_map = pmap,average_fit = xi_avg,
+                output_name = output, 
+                gait_fingerprint = gait_fingerprint,
+                subject_name = keep_subject_fit,
+                average_model_residual=avg_rmse_per_output[output],
+                l2_lambda=curr_l2_lambda,
+                diff_from_average_matrix=XI_0_list[i],
+                optimal_fit = left_out_optimal_fit_dict[output])
             
             #Append to the model output list
             k_model_list.append(personalized_k_model)
 
+        #Copy the output name to to assign it to the initializers
         output_name_copy = list(output_name)
 
         if leave_out_model_name is not None: 
@@ -237,7 +264,8 @@ class PersonalizedKModelFactory:
             output_name_copy.remove(leave_out_model_name)
 
         #Create the personalized measurement model
-        personal_model_func = PersonalMeasurementFunction(k_model_list, output_name_copy)
+        personal_model_func = PersonalMeasurementFunction(k_model_list, 
+                                                          output_name_copy)
 
 
         #Same process for all the models that are left out
@@ -254,12 +282,18 @@ class PersonalizedKModelFactory:
             pmap = pmap_aggregate[:,k_model_output_size*i:k_model_output_size*(i+1)]
             xi_avg = XI_average_list[i]
 
+            #Get the appropriate l2 regularization
+            if(isinstance(l2_lambda,list)):
+                curr_l2_lambda = l2_lambda[i]
+            else:
+                curr_l2_lambda = l2_lambda
+
             #### Initialize and return the P model
             personalized_k_model = PersonalKModel(k_model,pmap,xi_avg,output, 
-                                                  gait_fingerprint, keep_subject_fit,
-                                                  average_model_residual=avg_rmse_per_output[output],
-                                                  l2_lambda=l2_lambda,
-                                                  diff_from_average_matrix=XI_0_list[i])
+                gait_fingerprint, keep_subject_fit,
+                average_model_residual=avg_rmse_per_output[output],
+                l2_lambda=curr_l2_lambda,
+                diff_from_average_matrix=XI_0_list[i])
             
             #Append to the model output list
             k_model_leave_out_list.append(personalized_k_model)

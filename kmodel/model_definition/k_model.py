@@ -7,13 +7,13 @@ that takes different function bases and combines them
 #Common imports
 import pandas as pd
 import numpy as np
-from kmodel.function_bases import Basis
+from .function_bases import Basis
 from typing import List, Union
 
 class KroneckerModel():
 
 
-    def __init__(self,basis_list: List[Basis]):
+    def __init__(self, basis_list: List[Basis]):
         """
         Initialize the object 
 
@@ -33,6 +33,8 @@ class KroneckerModel():
         #Store the shape of the output
         # the output array is the product of the size of all the functions
         self.output_size = np.product([basis.size for basis in basis_list])
+
+        #self
 
 
     def get_basis_names(self):
@@ -68,16 +70,21 @@ class KroneckerModel():
         return self.output_size
 
 
-    def evaluate(self,dataset: Union[np.ndarray,pd.DataFrame]) -> np.ndarray:
+    def evaluate(self,dataset: 
+        Union[np.ndarray,pd.DataFrame],
+        #derivatives:List[int]=None   #Have not implemented the derivative functionality
+        ) -> np.ndarray:
         """
         Evaluate the basis with the corresponding dataset
 
         Keyword arguments:
-        np_dataset -- Numpy array with data to evaluate.
+        dataset -- Numpy array with data to evaluate.
                       shape (num_datapoints, num_basiss)
 
-        pd_dataset -- Data in pandas format. Expects the columns to 
+        dataset -- Data in pandas format. Expects the columns to 
                       have the each basis name. 
+
+        
 
         Returns:
         output -- evaluation of the kronecker product
@@ -86,10 +93,10 @@ class KroneckerModel():
         """
         
         #Invoke the corresponding function
-        if(isinstance(dataset, np.ndarray) == True):
+        if(isinstance(dataset, np.ndarray) is True):
             return self._evaluate_numpy(dataset)
         
-        elif (isinstance(dataset, pd.DataFrame) == True):
+        elif (isinstance(dataset, pd.DataFrame) is True):
             return self._evaluate_pandas(dataset)
 
         else:
@@ -169,9 +176,12 @@ class KroneckerModel():
         return output
 
 
+
+
+
     def evaluate_derivative(self,np_dataset : np.ndarray) -> np.ndarray:
         """ 
-        This function derives the kronecker model at the state indexed by state_derivative
+        This function calculates the jacobian of the model
 
         Keyword Arguments:
         np_dataset -- numpy dataset that will be evaluated. Expected

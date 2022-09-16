@@ -7,6 +7,7 @@ import threading
 from functools import lru_cache
 import os
 from scipy.io import loadmat
+from sqlalchemy import column
 
 
 #TODO - verify if I can delete this function since I think its not neccesary
@@ -36,8 +37,17 @@ def get_end_points_R01(d,out_dict,parent_key='', sep='/',num_last_keys=2):
             
             str_dict = {0:'x',1:'y',2:'z',3:'e'}
 
-            if 'event' not in column_string and 'LHS' not in column_string and 'RHS' not in column_string and 'cvel' not in column_string:
+            #Create a endpoint list with the new key
+            # used as a preview to filter
+            temp_column_name = new_key+"_"+column_string
 
+            if 'events' not in temp_column_name and\
+               'LHS' not in temp_column_name and\
+               'RHS' not in temp_column_name and\
+               'cvel' not in temp_column_name and\
+               'footStrikes' not in temp_column_name and\
+               'ParticipantDetail' not in temp_column_name and\
+                'rvel' not in temp_column_name:
 
                 #If you have only one stride then it is converted into a 2D array
                 # Turn it into a 3d array
@@ -60,7 +70,14 @@ def get_end_points_R01(d,out_dict,parent_key='', sep='/',num_last_keys=2):
 
 
 def skip_column(column_name):
-    
+    """
+    Determine which endpoints to skip
+
+    Name Arguments
+    column_name: string that contains the endpoint and all the 
+                 elements leading up to it in the .mat file
+    """
+
     if('subjectdetails' in column_name or\
         'CutPoint' in column_name or\
         'description' in column_name or\
@@ -92,20 +109,40 @@ def downsample_forceplates(columns_to_endpoint_dict):
                 feature_list[1][i] = feature_list[1][i][::10]
 
 
-def add_nan_padding(columns_to_endpoint_dict):
+def remove_endpoint_feature(endpoint_string):
     """
-    This function will add nan to values to fill the 
-    gaps when a feature does not have an experiment
+    Removes the feature in the endpoint string
+
+    Keyword Arguments
+    endpoint_string: string that describes the path to the 
+    endpoints in the .mat tree datastructure. Each level is divided 
+    by a '/'. The last two levels describe the specific feature (Ex. 
+    angle) and joint (Ex. ankle)
+
+    """
+
+    return '/'.join(endpoint_string.split('/')[:-2])
+
+
+def add_nan_columns_to_experiments(columns_to_endpoint_dict):
+    """
+    Some experiments do not have the same features
 
     Example, joint angles do not appear in stairs (I think)
     """
 
 
     #Do a double for loop to compare all the values with one another
-    for column_name_1, column_endpoint_list_1 in columns_to_endpoint_dict.items():
+    for i,(column_name_1, column_endpoint_list_1) in enumerate(columns_to_endpoint_dict.items()):
+        
         #Filter based on the endpoint name
         if skip_column(column_name_1):
             continue
+        
+        print(f" Done {i}/{len(columns_to_endpoint_dict)}")
+
+        #Get feature 2's name so that we can add it to the endpoint list
+        feature_1_name = '/'.join(column_endpoint_list_1[0][0].split('/')[-2:])    
 
         for column_name_2, column_endpoint_list_2 in columns_to_endpoint_dict.items():
             
@@ -114,24 +151,26 @@ def add_nan_padding(columns_to_endpoint_dict):
                 continue
 
             #Create two dictionaries to analyze if there are missing elements in each
-            dict_1 = {'/'.join(path_name.split('/')[:-2]) : path_dataset for path_name, path_dataset in zip(*column_endpoint_list_1)}
-            dict_2 = {'/'.join(path_name.split('/')[:-2]) : path_dataset for path_name, path_dataset in zip(*column_endpoint_list_2)}
+            dict_1 = {remove_endpoint_feature(path_name) : path_dataset for path_name, path_dataset in zip(*column_endpoint_list_1)}
+            dict_2 = {remove_endpoint_feature(path_name) : path_dataset for path_name, path_dataset in zip(*column_endpoint_list_2)}
 
-            #Get feature 2's name so that we can add it to the endpoint list
-            feature_1_name = '/'.join(column_endpoint_list_1[0][0].split('/')[-2:])    
 
             #For every feature in dictionary 1, verify if it is in dictionary 2
             for key_2 in dict_2:
 
                 if skip_column(key_2):
                     continue
+                
+                if("Run/Run" in key_2):
+                    print(f"doing {key_2}")
 
                 try:
-                        dict_1[key_2]
+                    dict_1[key_2]
                 
                 #If you don't have the key, then add it
                 except KeyError as e:
-                    #print(f"{column_name_1} did not have key {key_2} relative to {column_name_2}")
+
+                    # print(f"{column_name_1} did not have key {key_2} relative to {column_name_2}")
 
                     #Add the endpoint name
                     new_endpoint_name = key_2 + '/' + feature_1_name
@@ -143,11 +182,78 @@ def add_nan_padding(columns_to_endpoint_dict):
                     column_endpoint_list_1[1].append(nan_array)
 
 
+def add_nan_columns_to_experiments2(endpoint_string):
+    """
+    Makes sure that all features have the same amount of length
+
+    Keyword Arguments
+    endpoint_string: string that describes the path to the 
+    endpoints in the .mat tree datastructure. Each level is divided 
+    by a '/'. The last two levels describe the specific feature (Ex. 
+    angle) and joint (Ex. ankle)
+
+    """
+
+
+    ## First of all, lets create an experiment setting to size of experiment list
+    # this will determine how many datapoints each feature in an experiment should have
+    experiment_to_exp_size_dict = {}
+    for feature, (feature_path_name_list,experiment_data_list) in endpoint_string.items():
+        
+        #Iterate through all the end points for a specific feature
+        for i,feature_path_name in enumerate(feature_path_name_list):
+           
+            #Get the experiment name by taking out the feature
+            experiment_name = remove_endpoint_feature(feature_path_name)
+            
+            #Get the experiment data and size
+            experiment_data = experiment_data_list[i]
+            experiment_size = experiment_data.shape[0]
+
+            #Verify if its the same size as recorded
+            try:
+                if experiment_to_exp_size_dict[experiment_name] != experiment_size:
+                    print(f"This feature does not match the rest of the experiment {feature_path_name}")
+
+                    #If the new size is bigger, then set it to be that size
+                    if experiment_to_exp_size_dict[experiment_name] < experiment_size:
+                        experiment_to_exp_size_dict[experiment_name] = experiment_size
+
+            #Key errors happen when the element does not exist. 
+            # Simply add it in this case
+            except KeyError:
+                experiment_to_exp_size_dict[experiment_name] = experiment_size
+
+
+    # Now that we know the biggest size of each experiment, 
+    # make sure each feature abides by this
+
+    for feature, (feature_path_name_list, experiment_data_list) in endpoint_string.items():
+        
+        #Iterate through all the end points for a specific feature
+        for i,feature_path_name in enumerate(feature_path_name_list):
+        
+            #Get the experiment name by taking out the feature
+            experiment_name = remove_endpoint_feature(feature_path_name)
+            
+            #Get the experiment data and size
+            experiment_data = experiment_data_list[i]
+            experiment_size = experiment_data.shape[0]
+
+            #If the experiment is shorter, add nans to it
+            #NOTE, adding nan to the bottom is a key assumption, 
+            # there might be data missing in the middle.
+            if experiment_size <  experiment_to_exp_size_dict[experiment_name]:
+                print("Working")
+                diff_size =  experiment_to_exp_size_dict[experiment_name] - experiment_size
+                new_data = np.concatenate([experiment_data,np.array([np.nan]*diff_size)])
+                experiment_data_list[i] = new_data
+
 
 def add_experiment_info(random_endpoint_list, df):
         """
         This function will add information stored in the trial name
-        to the pandas dataframe
+        to the pandas dataframe such as velocity and inclination
         """
         
         ## Add task information 
@@ -179,6 +285,7 @@ def add_experiment_info(random_endpoint_list, df):
             experiment_time_vector = [dt*i for i in range(experiment_num_rows)]
 
             #Handle every experiment type 
+            ## thisadd experiment speed and incline
             if(experiment_type == 'Run'):
                 
                 #Running incline is always 0                
@@ -204,7 +311,7 @@ def add_experiment_info(random_endpoint_list, df):
                 #The walking speed is user selected and not specified
                 experiment_speed_vector = [np.nan]*experiment_num_rows
 
-            elif(experiment_type == 'Sts'):
+            elif(experiment_type == 'Sts' or experiment_type == 'SitStand'):
 
                 #There is no speed or incline in sit to stand
                 experiment_incline_vector = [np.nan]*experiment_num_rows
@@ -247,10 +354,11 @@ def add_experiment_info(random_endpoint_list, df):
 
 #This is the main function that will perform the flattening
 # Only works for streaming right now
-def flatten_r01_normalized():
+def flatten_r01():
 
     #Determine the dataset that you want to use
-    dataset = 'Streaming'
+    # dataset = 'Streaming'
+    dataset = 'Normalized'
 
     #Get the file
     file_name = f'../../data/r01_dataset/{dataset}.mat'
@@ -283,14 +391,15 @@ def flatten_r01_normalized():
         #Some features do not have data for all the trials. This will
         # through the alignment of the flattened version out. 
         # Create numpy arrays with NaN values such that all features match
-        add_nan_padding(columns_to_endpoint_dict)
-       
+        add_nan_columns_to_experiments(columns_to_endpoint_dict)
+        add_nan_columns_to_experiments2(columns_to_endpoint_dict)
 
         # Create the pandas dataframe to store all the info
         df = DataFrame()
 
         #Save one list so that we can add task information
         random_endpoint_list = None
+
         #Concatenate all the information
         for column_name, endpoint_list in columns_to_endpoint_dict.items():
 
@@ -355,6 +464,6 @@ def flatten_r01_normalized():
     
 
 if __name__ == '__main__':
-    flatten_r01_normalized()
+    flatten_r01()
     # determine_different_strides()
 

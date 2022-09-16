@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 #Custom imports
-from .personal_k_model import PersonalKModel
+from .fitted_model import SimpleFitModel
 
 #Annotation imports
 from typing import List
@@ -21,7 +21,10 @@ class PersonalMeasurementFunction:
     """
 
 
-    def __init__(self, models: List[PersonalKModel], output_names: List[str]):
+    def __init__(self, 
+                 models: List[SimpleFitModel],
+                 output_names: List[str], 
+                 subject_name: str):
 
         #Store reference to all the models
         self.kmodels = models
@@ -33,13 +36,15 @@ class PersonalMeasurementFunction:
         self.output_names = output_names
 
         #Have a function to define the number of statest that are taken as the input
-        self.num_states = models[0].model.get_num_basis()
+        self.num_states = models[0].get_num_basis()
 
         #Have a property for the number of gait fingerprint
-        self.num_gait_fingerprint = models[0].num_gait_fingerpints
+        # self.num_gait_fingerprint = models[0].num_gait_fingerpints
+        
+        #Store the subject name
+        self.subject_name = subject_name
 
-
-    def evaluate(self, input_data, use_personalized_fit = False, use_average_fit=False):
+    def evaluate(self, input_data:np.ndarray):
         """
         Evaluate a Kronecker Model multiplied by 
             the (average fit plus personalization map times gait fingerprint) 
@@ -59,10 +64,6 @@ class PersonalMeasurementFunction:
         input_data -- numpy array that contains the model inputs and the gait fingeprints
                    shape (num_datapoints, num_models + num_gait_fingerprints)
                    
-        use_personalized_fit -- Boolean if true just use the fit for 
-                                the subject that was initialized in 
-        use_average_fit -- Boolean, if true just use the average fit
-
 
         Returns
         output -- evaluated personalized kronecker model output
@@ -90,8 +91,6 @@ class PersonalMeasurementFunction:
             #Set the corresponding column
             #Reshape to make sure numpy broadcasting rules hold
             output_buffer[:,[i]] = kmodel.evaluate(input_data, 
-                                                   use_personalized_fit = use_personalized_fit, 
-                                                   use_average_fit = use_average_fit,
                                                    kronecker_output=kronecker_output).reshape(num_datapoints,1)
 
         return output_buffer
