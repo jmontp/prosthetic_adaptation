@@ -120,135 +120,137 @@ lower_limits = np.array([-np.inf, 0.6,0.5,-15]).reshape(-1,1)
 
 
 #Run the EKF across all the subjects
-rmse_list = []
+noise_columns_header = [state + 'process model noise' 
+                        for state
+                        in STATE_NAMES]
+column_headers = STATE_NAMES + JOINT_NAMES \
+    + JOINT_SPEED + noise_columns_header + ['Subject','Test','conditions']
+
+dataframe = pd.DataFrame(columns=column_headers).astype('object')
 
 
-#TODO - Repeat while sampling the process model noise
-# num_repeats = 1
+#Load samples 
+process_model_noise_samples = np.load('process_model_noise_samples.npy')
 
-# for i in range(num_repeats):
+for process_model_noise_index in range(process_model_noise_samples.shape[0]):
 
-#Process noise
-#Phase, Phase, Dot, Stride_length, ramp, gait fingerprints
-# PHASE_VAR_AVG =         0     
-# PHASE_DOT_VAR_AVG =     8E-7 #2E-8
-# STRIDE_LENGTH_VAR_AVG = 8E-7  #7E-8
-# RAMP_VAR_AVG =          5E-5
+    #Process noise
+    #Phase, Phase, Dot, Stride_length, ramp, gait fingerprints
+    # PHASE_VAR_AVG =         0     
+    # PHASE_DOT_VAR_AVG =     8E-7 #2E-8
+    # STRIDE_LENGTH_VAR_AVG = 8E-7  #7E-8
+    # RAMP_VAR_AVG =          5E-5
 
-#Test calibration
-# PHASE_VAR_AVG =         0     
-# PHASE_DOT_VAR_AVG =     8E-7
-# STRIDE_LENGTH_VAR_AVG = 1E-6
-# RAMP_VAR_AVG =          6E-4
+    #Test calibration
+    # PHASE_VAR_AVG =         0     
+    # PHASE_DOT_VAR_AVG =     8E-7
+    # STRIDE_LENGTH_VAR_AVG = 1E-6
+    # RAMP_VAR_AVG =          6E-4
 
-#From tuner
-scale = 7e-2
-PHASE_VAR_AVG =         0     
-PHASE_DOT_VAR_AVG =     2E+1 * scale
-STRIDE_LENGTH_VAR_AVG = 1E-5 * scale
-RAMP_VAR_AVG =          1E-3 * scale
+    #From tuner
+    # scale = 7e-2
+    # PHASE_VAR_AVG =         0     
+    # PHASE_DOT_VAR_AVG =     2E+1 * scale
+    # STRIDE_LENGTH_VAR_AVG = 1E-5 * scale
+    # RAMP_VAR_AVG =          1E-3 * scale
 
-
-Q = [PHASE_VAR_AVG,
-         PHASE_DOT_VAR_AVG,
-         STRIDE_LENGTH_VAR_AVG,
-         RAMP_VAR_AVG
-         ]
-
-Q = np.diag(Q)
-
-
-#Generate a random list of conditions to test out
-random_test_condition = generate_random_condition()
-
-
-#DEBUG -- Take a subset to quickly run through the test and debug the csv saving
-subject_list = subject_list[:1]
-
-for subject_index, subject in enumerate(subject_list):
+    # Q = [PHASE_VAR_AVG,
+    #         PHASE_DOT_VAR_AVG,
+    #         STRIDE_LENGTH_VAR_AVG,
+    #         RAMP_VAR_AVG
+    #         ]
     
-    #Generate the validation data for this subject
-    state_data, sensor_data, steps_per_condition, condition_list\
-        = generate_data(subject, 
-                        STATE_NAMES,
-                        JOINT_NAMES,
-                        random_test_condition)
-    
-    #Do not real time plot after subject AB01
-    if subject_index > 0:
-        RT_PLOT = False
-    
-    #Wait for the plotter to catch up, if not it will crash
-    if RT_PLOT:
-        input("Press enter between tests")
-    print(f"{subject} Naive Least Squares")
-    
-    
-    ## Do the personalized model fit 
-    ekf_instance = ekf_loader(subject, JOINT_NAMES, 
-                              initial_state, initial_state_covar, Q, R, 
-                              lower_limits, upper_limits,
-                              use_subject_average=False)
-    
-    #Run the simulation
-    rmse_testr, measurement_rmse, rmse_delay\
-                = simulate_ekf(ekf_instance,state_data,sensor_data,
-                               plot_local=RT_PLOT)
-    
-    print(f"State rmse {rmse_testr}, measurement rmse {measurement_rmse}")
-    
-    rmse_list.append(np.concatenate([rmse_testr, measurement_rmse], axis=0))
-    
-    
-    
-    #Wait for the plotter to catch up, if not it will crash
-    if RT_PLOT:
-        input("Press enter between tests")
-    
-    print(f"{subject} Inter-Subject Average")
-    #Run the test for the subject with avearge model fit
-     ## Do the personalized model fit 
-    ekf_instance = ekf_loader(subject, JOINT_NAMES, 
-                              initial_state, initial_state_covar, Q, R, 
-                              lower_limits, upper_limits,
-                              use_subject_average=True)
-    
-    #Run the simulation
-    rmse_testr, measurement_rmse, rmse_delay\
-                = simulate_ekf(ekf_instance,state_data,sensor_data,
-                               plot_local=RT_PLOT)
+    print((f"Testing Process Model Noise Sample {process_model_noise_index} "
+           f"{process_model_noise_samples[process_model_noise_index]}"))
+    q_diag = process_model_noise_samples[process_model_noise_index]
+    Q = np.diag(q_diag)
+
+
+    #Generate a random list of conditions to test out
+    random_test_condition = generate_random_condition()
+
+
+    #DEBUG -- Take a subset to quickly run through the test and debug the csv saving
+    subject_list = subject_list[:1]
+
+    for subject_index, subject in enumerate(subject_list):
+        
+        #Generate the validation data for this subject
+        state_data, sensor_data, steps_per_condition, condition_list\
+            = generate_data(subject, 
+                            STATE_NAMES,
+                            JOINT_NAMES,
+                            random_test_condition)
+        
+        #Do not real time plot after subject AB01
+        if subject_index > 0:
+            RT_PLOT = False
+        
+        #Wait for the plotter to catch up, if not it will crash
+        if RT_PLOT:
+            input("Press enter between tests")
+        print(f"{subject} Naive Least Squares")
+        
+        
+        ## Do the personalized model fit 
+        ekf_instance = ekf_loader(subject, JOINT_NAMES, 
+                                initial_state, initial_state_covar, Q, R, 
+                                lower_limits, upper_limits,
+                                use_subject_average=False)
+        
+        #Run the simulation
+        try:
+            rmse_testr, measurement_rmse, rmse_delay\
+                    = simulate_ekf(ekf_instance,state_data,sensor_data,
+                                plot_local=RT_PLOT)
+            print((f"State rmse {rmse_testr}, "
+                    "measurement rmse {measurement_rmse}"))
             
-    print(f"State rmse {rmse_testr}, measurement rmse {measurement_rmse}")
-    
-    rmse_list.append(np.concatenate([rmse_testr, measurement_rmse], axis=0))
-    
-    pass
+            #Get the data to save
+            data = [[*rmse_testr, *measurement_rmse, *q_diag, subject,
+                 'NSL',condition_list]]
+        except AssertionError:
+            print(f"Failed Assertion on {q_diag}")
+            #Set data to invalid
+            data = [*([None]*10), *q_diag, subject, 'NSL',condition_list]
+      
+        
+        #Add to stored data
+        dataframe = pd.concat([dataframe,pd.DataFrame(data,columns=column_headers)],
+                            ignore_index=True)
+
+        
+        #Wait for the plotter to catch up, if not it will crash
+        if RT_PLOT:
+            input("Press enter between tests")
+        
+        print(f"{subject} Inter-Subject Average")
+        #Run the test for the subject with avearge model fit
+        ## Do the personalized model fit 
+        ekf_instance = ekf_loader(subject, JOINT_NAMES, 
+                                initial_state, initial_state_covar, Q, R, 
+                                lower_limits, upper_limits,
+                                use_subject_average=True)
+        try:
+            #Run the simulation
+            rmse_testr, measurement_rmse, rmse_delay\
+                        = simulate_ekf(ekf_instance,state_data,sensor_data,
+                                    plot_local=RT_PLOT)
+                    
+            print(f"State rmse {rmse_testr}, measurement rmse {measurement_rmse}")
+            
+            #Create CSV data vector
+            data = [[*rmse_testr, *measurement_rmse, *q_diag, subject,
+                    'ISA',condition_list]]
+        except AssertionError:
+            print(f"Failed Assertion on {q_diag}")
+            #Set data to invalid
+            data = [*([None]*10), *q_diag, subject, 'ISA',condition_list]
+            
+        #Add to stored data
+        dataframe = pd.concat([dataframe,pd.DataFrame(data,columns=column_headers)],
+                            ignore_index=True)
 
 
-##Save to CSV
-
-#Create the column headers
-column_headers = STATE_NAMES + JOINT_NAMES + JOINT_SPEED
-
-
-#Reshape all the elements so that you can fit them properly
-rmse_list = [i.reshape(1,-1) for i in rmse_list]
-
-#Aggregate the numpy arrays and separate them into two different lists
-# for ease of integrating
-rmse_np_NSL = np.concatenate(rmse_list[::2],axis=0)
-rmse_np_ISA = np.concatenate(rmse_list[1::2],axis=0)
-
-rmse_np = np.concatenate([rmse_np_NSL, rmse_np_ISA], axis=0)
-
-#Create a pandas dataframe
-df = pd.DataFrame(rmse_np, columns = column_headers)
-
-#Add a column indicating the subject
-df['Subject'] = subject_list*2
-
-#Add a column indicating the test that they performed
-df['Test'] = (['NSL']*len(subject_list)) + (['ISA']*len(subject_list))
-
-#Export to csv
-df.to_csv("first_paper_NLS_vs_ISA.csv", sep=',')
+        ##Save to CSV
+        dataframe.to_csv("first_paper_NLS_vs_ISA.csv", sep=',')
