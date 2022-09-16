@@ -20,9 +20,6 @@ class Extended_Kalman_Filter:
                  output_model: MeasurementModel = None, 
                  lower_state_limit: np.ndarray = None, 
                  upper_state_limit: np.ndarray = None,
-                 use_subject_average_fit: bool = False,
-                 use_least_squares_gf: bool = False,
-                 use_optimal_fit:bool = False,
                  heteroschedastic_model: bool = False):
         """
         Create the extended Kalman filter object
@@ -74,22 +71,14 @@ class Extended_Kalman_Filter:
         # self.Q_h[3,3] = 0
         self.R = observation_noise
         self.R_h = np.copy(observation_noise)
-        self.R_h[0,0] *= 2
-        self.R_h[1,1] *= 10
+        self.R_h[:3,:3] *= 20
+        self.R_h[3:,3:] *= 100
         self.calculated_measurement_ = None
         self.num_states = initial_state.shape[0]
-        self.use_subject_average_fit = use_subject_average_fit
-        self.use_optimal_fit = use_optimal_fit
         self.heteroschedastic_model = heteroschedastic_model
 
         #Optional, output model
         self.output_model = output_model
-        
-        #Use the gait fingerprint estimate of the least squares
-        self.use_least_squares_gf = use_least_squares_gf
-        #If using least squares gf, override use subject average fit
-        if(use_least_squares_gf == True):
-            self.use_subject_average_fit = False
 
         #Calculate output based on initial conditions if it is defined
         if self.output_model is not None: 
@@ -157,10 +146,7 @@ class Extended_Kalman_Filter:
 
         # Calculate the output
         if (self.output_model is not None):
-            self.output = self.output_model.evaluate_h_func(updated_state,
-                                                            use_subject_average_fit=self.use_subject_average_fit,
-                                                            use_least_squares_gf=self.use_least_squares_gf,
-                                                            use_optimal_fit=self.use_optimal_fit)
+            self.output = self.output_model.evaluate_h_func(updated_state)
 
         return updated_state, updated_covariance
 
@@ -187,10 +173,7 @@ class Extended_Kalman_Filter:
     def update_step(self, predicted_state, predicted_covariance, sensor_measurements, R):
 
         #Calculate the expected measurements (z)
-        expected_measurements = self.measurement_model.evaluate_h_func(predicted_state,
-                                                                       use_subject_average_fit=self.use_subject_average_fit,
-                                                                       use_least_squares_gf=self.use_least_squares_gf,
-                                                                       use_optimal_fit = self.use_optimal_fit)
+        expected_measurements = self.measurement_model.evaluate_h_func(predicted_state)
         self.calculated_measurement_ = expected_measurements
 
         #Calculate the innovation
@@ -198,10 +181,7 @@ class Extended_Kalman_Filter:
         self.y_tilde = y_tilde
         
         #Get the jacobian for the measurement function
-        H = self.measurement_model.evaluate_dh_func(predicted_state,
-                                                    use_subject_average_fit=self.use_subject_average_fit,
-                                                    use_least_squares_gf=self.use_least_squares_gf,
-                                                    use_optimal_fit=self.use_optimal_fit)
+        H = self.measurement_model.evaluate_dh_func(predicted_state)
 
         #Calculate the innovation covariance
         S = H @ predicted_covariance @ H.T + R

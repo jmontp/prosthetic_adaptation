@@ -1,7 +1,7 @@
 import os, sys
 
 #Detertmine directory to add
-relative_path = '../'
+relative_path = '../kmodel/'
 dir_to_add = os.path.abspath(os.path.join(os.path.dirname(__file__), relative_path))
 
 #Oputput debug text if called as main
@@ -14,5 +14,6 @@ if __name__ == "__main__":
 sys.path.insert(0, dir_to_add)
 
 #Import the relevant modules
-import k_model
-import function_bases
+# import kmodel
+import model_definition
+import model_fitting

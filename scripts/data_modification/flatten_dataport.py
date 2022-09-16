@@ -455,7 +455,7 @@ def add_global_shank_angle():
         average_foot_angle = df[foot_offset_mask]['jointangles_foot_x'].mean()
         df['jointangles_foot_x'] = df['jointangles_foot_x'] - average_foot_angle
         df['jointangles_shank_x'] = df['jointangles_shank_x'] - average_foot_angle
-        df['jointangles_thigh_x'] = df['jointangles_thigh_x'] - average_foot_angle
+        # df['jointangles_thigh_x'] = df['jointangles_thigh_x'] - average_foot_angle
 
         #Doing this after the fact since the plots showed that no actual value was over 170 after substracting the mean value
         # remove_outliers(df,'jointangles_thigh_x',170)

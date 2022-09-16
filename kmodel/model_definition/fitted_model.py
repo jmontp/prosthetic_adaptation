@@ -8,8 +8,8 @@ from dataclasses import dataclass
 import numpy as np
 
 #Custom imports
-from k_model import KroneckerModel
-from function_bases import Basis
+from .k_model import KroneckerModel
+from .function_bases import Basis
 
 class FitModel(KroneckerModel):
     """
@@ -28,7 +28,9 @@ class FitModel(KroneckerModel):
         self.output_name = output_name
 
 
-    def evaluate(self, input_data:np.ndarray, eval_cond=None) -> np.ndarray:
+    def evaluate(self, input_data:np.ndarray, 
+                       eval_cond=None, 
+                       kronecker_output=None) -> np.ndarray:
         """
         This is an abstract method that evaluates into a scalar
         """
@@ -47,25 +49,7 @@ class FitModel(KroneckerModel):
         Returns
         output: numpy array with shape (num_datapoints, 1)
         """
-        return self.evaluate(input_data)
-
-
-
-
-@dataclass
-class FitInformation:
-    """
-    This class is meant to store the fit information that can be 
-    useful later on
-    """
-    def __init__(self,l2_lambda:float,
-                 average_model_residual:float,
-                 diff_from_average_matrix:np.ndarray):
-        
-        self.l2_lambda = l2_lambda
-        self.average_model_residual = average_model_residual
-        self.diff_from_average_matrix = diff_from_average_matrix
-
+        return super().evaluate(input_data)
 
 
 class SimpleFitModel(FitModel):
@@ -86,9 +70,9 @@ class SimpleFitModel(FitModel):
         
 
 
-    def evaluate(self,
-                input_data:np.ndarray,
-                eval_cond=None) -> np.ndarray:
+    def evaluate(self, input_data:np.ndarray, 
+                       eval_cond=None, 
+                       kronecker_output=None) -> np.ndarray:
         """
         Returns a scalar based on the kronecker model and the model fit
 
@@ -100,9 +84,10 @@ class SimpleFitModel(FitModel):
         Returns
         output: np array with shape (num_datapoints, 1)
         """
-
-        #Get the evaludated row vector
-        kronecker_output = self.get_kronecker_output(input_data)
+        #IF you don't get a kronecker model passed in, calculate it yourself
+        if kronecker_output is None:
+            #Get the evaludated row vector
+            kronecker_output = self.get_kronecker_output(input_data)
 
         #Shape (num_datapoints, 1, model_size)
         kronecker_output = kronecker_output[:,np.newaxis,:]
@@ -127,15 +112,16 @@ class PersonalKModel(FitModel):
     EVAL_AVERAGE_FIT = 0
     EVAL_OPTIMAL_FIT = 1
     EVAL_GF_FIT = 2
-
+    EVAL_GF_IN_STATE = 3
+    
     def __init__(self, basis_list: List[Basis],
                  output_name:str,
                  average_fit: np.ndarray,
                  personalization_map: np.ndarray,
                  gait_fingerprint: np.ndarray = None,
                  subject_name: np.ndarray = None,
-                 optimal_fit:np.ndarray = None,
-                 fit_information:FitInformation=None):
+                 optimal_fit:np.ndarray = None
+                 ):
         """
         Initialize the PersonalKModel Object
 
@@ -177,9 +163,6 @@ class PersonalKModel(FitModel):
         #Keep the output name
         self.output_name = output_name
 
-        #Fit information
-        self.fit_information = fit_information
-
     def get_subject_name(self):
         """
         Returns the subjects name, if any
@@ -198,11 +181,9 @@ class PersonalKModel(FitModel):
         return self.model.evaluate(input_data)
 
 
-    def evaluate(self,input_data:np.ndarray,
-                 use_personalized_fit:bool =False,
-                 use_average_fit:bool=False,
-                 kronecker_output:bool=None,
-                 use_optimal_fit:bool=False):
+    def evaluate(self, input_data:np.ndarray, 
+                       eval_cond=None, 
+                       kronecker_output=None) -> np.ndarray:
         """
         Evaluate a Kronecker Model multiplied by
             the (average fit plus personalization map times gait fingerprint)
@@ -253,12 +234,13 @@ class PersonalKModel(FitModel):
         gait_fingerprints = input_data[:, self.num_models:]
 
         #Get the gait_fingerprints
-        if(use_personalized_fit is True):
+        if(eval_cond == self.EVAL_GF_FIT):
 
             #Return error if the object was not initialized 
             if(self.subject_gait_fingerprint is None):
                 raise AttributeError("Object was not initialized \
                             with a personalized_fit parameter")
+                
             #Use the gait fingerprint stored
             gait_fingerprints = self.subject_gait_fingerprint
 
@@ -267,13 +249,13 @@ class PersonalKModel(FitModel):
                                  gait_fingerprints @ self.pmap
 
         #Don't do any personalization and use the average fit
-        elif(use_average_fit is True):
+        elif(eval_cond == self.EVAL_AVERAGE_FIT):
             
             #Use stored average fit as the model fit vector
             model_fit_vector = self.average_fit
 
         #Don't do any personalization and use the optimal fit
-        elif(use_optimal_fit is True):
+        elif(eval_cond == self.EVAL_OPTIMAL_FIT):
             
             #Use the optimal fit as the fit vetor
             model_fit_vector = self.optimal_fit

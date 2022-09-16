@@ -1,5 +1,5 @@
 #Imoprt the kronecker model
-from context import kmodel
+from .context import kmodel
 from kmodel.personalized_model_factory import PersonalizedKModelFactory
 from kmodel.function_bases import FourierBasis, PolynomialBasis
 from kmodel.k_model import KroneckerModel

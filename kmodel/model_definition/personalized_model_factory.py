@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 #Import the model fitting library
-from .k_model_fitting import KModelFitter
+from .model_fitting.k_model_fitting import KModelFitter
 
 #Import personalized k model
 from .personal_k_model import PersonalKModel

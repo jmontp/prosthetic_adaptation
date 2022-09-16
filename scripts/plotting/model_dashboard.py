@@ -17,7 +17,8 @@ import numpy as np
 
 #Custom imports
 from context import kmodel
-from kmodel.personalized_model_factory import PersonalizedKModelFactory
+from kmodel.model_fitting.load_models import load_simple_models
+from kmodel.model_definition.personal_measurement_function import PersonalMeasurementFunction
 ###############################################################################
 ###############################################################################
 ## Constants definition
@@ -37,36 +38,36 @@ NULL_SPACE_CONFIG = 'Null-Space'
 def load_subject_model(subject,cond):
     """Loads the model and certain parameters for a subject"""
 
-    #Import the personalized model 
-    factory = PersonalizedKModelFactory()
 
-    #Get the file for the model
-    if(cond == NULL_SPACE_CONFIG):
-         model_dir = (f'../../data/kronecker_models/'
-                f'left_one_out_model_{subject}_null.pickle')
-    else:
-        model_dir = (f'../../data/kronecker_models/'
-                    f'left_one_out_model_{subject}.pickle')
-
-    model = factory.load_model(model_dir)
-
+    ##Load the model 
+    joint_list = ['jointangles_thigh_x',
+                   'jointangles_shank_x',
+                   'jointangles_foot_x']
+    
+    fitted_model_list = [load_simple_models(joint,subject) 
+                            for joint 
+                            in joint_list]
+    
+    model = PersonalMeasurementFunction(fitted_model_list, joint_list, subject)
+        
     #Define the joints that you want to import
     joint_names = model.output_names
 
     #Get the number of gait fingerprints from the model
-    num_gf = model.kmodels[0].num_gait_fingerpints
+    # num_gf = model.kmodels[0].num_gait_fingerpints
 
     #Phase, Phase Dot, Ramp, Step Length, 5 gait fingerprints
-    state_names = model.kmodels[0].model.basis_names\
-        + [f"gf{i}" for i in range(num_gf)]
+    state_names = model.kmodels[0].basis_names
 
-    return model, joint_names, num_gf, state_names
+        # + [f"gf{i}" for i in range(num_gf)]
+
+    return model, joint_names, state_names
 
 #Define an initial subject
 initial_subject = "AB01"
 
 #load the subject
-model, joint_names, num_gf, state_names = load_subject_model(initial_subject,
+model, joint_names, state_names = load_subject_model(initial_subject,
                                                              GF_CONFIG)
 
 #Describe the model 
@@ -74,13 +75,13 @@ def describe_model(model):
     """Take in a personal measurement function and extract the internal
     model structure"""
     #Get the names of the parameters of the basis functions
-    basis_names = model.kmodels[0].model.basis_names
+    basis_names = model.kmodels[0].basis_names
     #Get the size of each basis list
-    basis_sizes = [basis.n for basis in model.kmodels[0].model.basis_list]
+    basis_sizes = [basis.n for basis in model.kmodels[0].basis_list]
     #Get the basis type (e.g. Fouriter, Polynomial, etc)
-    basis_type = [basis.name for basis in model.kmodels[0].model.basis_list]
+    basis_type = [basis.name for basis in model.kmodels[0].basis_list]
     #Get the list of l2 regularization
-    l2_status = [(kmodel.output_name,kmodel.l2_lambda) for kmodel in model.kmodels]
+    l2_status = [(kmodel.output_name) for kmodel in model.kmodels]
 
 
     #Get a list of every model name
@@ -88,8 +89,8 @@ def describe_model(model):
         [html.Div(children = f"{name.capitalize()}, {type} - {size}")
          for name,size,type
          in zip(basis_names,basis_sizes,basis_type)] + \
-        [html.Div(children=f"{output_name} L2 Reg - {l2_lambda}")
-         for output_name, l2_lambda
+        [html.Div(children=f"{output_name}")
+         for output_name
          in l2_status]
 
 
@@ -197,7 +198,7 @@ create_conditions_dropdown = lambda:create_dropdown(conditions_dropdown_name,\
 ###############################################################################
 ###############################################################################
 ## Configure the plotter callback
-
+num_gf = 0 
 #Define the input and output for the plotter callback
 callback_input = [Input(f"{i}-slider","value") 
                   for i 
@@ -241,9 +242,9 @@ def plotter_callback(*input):
     condition = input[num_gf+4]
 
     #Verify that we have the correct model
-    if not (model.kmodels[0].subject_name == subject):
-        print(f"udpated model to {subject} from {model.kmodels[0].subject_name}")
-        model, joint_names, num_gf, state_names = load_subject_model(subject,condition)
+    if not (model.subject_name == subject):
+        print(f"udpated model to {subject} from {model.subject_name}")
+        model, joint_names, state_names = load_subject_model(subject,condition)
 
     
     #Define the number of points to plot per step

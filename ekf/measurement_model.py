@@ -1,7 +1,6 @@
-from xmlrpc.client import Boolean
 import numpy as np
 from .context import kmodel
-from kmodel.personal_measurement_function import PersonalMeasurementFunction
+from kmodel.model_definition.personal_measurement_function import PersonalMeasurementFunction
 
 class MeasurementModel():
     """
@@ -12,7 +11,7 @@ class MeasurementModel():
 
 
     def __init__(self,personal_model : PersonalMeasurementFunction,
-                      calculate_output_derivative: Boolean):
+                      calculate_output_derivative: bool):
         
         #The initialization method only requires the PersonalMeasurementFunction
         self.personal_model = personal_model
@@ -36,10 +35,7 @@ class MeasurementModel():
 
 
 
-    def evaluate_h_func(self,current_state:np.ndarray,
-                        use_subject_average_fit:bool = False,
-                        use_least_squares_gf:bool = False,
-                        use_optimal_fit:bool=False):
+    def evaluate_h_func(self,current_state:np.ndarray):
         """
         Evaluate the measurement function
 
@@ -61,17 +57,11 @@ class MeasurementModel():
         # ekf inputs column vectors
         # therefore, transpose both input and output
 
-        output = self.personal_model.evaluate(current_state.T, 
-                                              use_average_fit=use_subject_average_fit,
-                                              use_personalized_fit=use_least_squares_gf,
-                                              use_optimal_fit=use_optimal_fit)
+        output = self.personal_model.evaluate(current_state.T)
 
         if (self.calculcate_output_derivative == True):
             #Calculate the time derivative
-            output_time_derivative = self.output_time_derivative(current_state, output, 
-                                                                 use_subject_average_fit=use_subject_average_fit,
-                                                                 use_least_squares_gf=use_least_squares_gf,
-                                                                 use_optimal_fit=use_optimal_fit)
+            output_time_derivative = self.output_time_derivative(current_state, output)
             
             #Append to the output
             output = np.concatenate([output,output_time_derivative], axis=1)
@@ -80,10 +70,7 @@ class MeasurementModel():
 
 
 
-    def evaluate_dh_func(self,current_state:np.ndarray,
-                        use_subject_average_fit:bool = False,
-                        use_least_squares_gf:bool = False,
-                        use_optimal_fit:bool = False):
+    def evaluate_dh_func(self,current_state:np.ndarray):
         """
         Calculate the derivative at this current point in time
 
@@ -101,14 +88,11 @@ class MeasurementModel():
                            shape(num_outputs, 1)
         """
         #Use numerical method to calculate the jacobean 
-        result = self.numerical_jacobean(current_state,use_subject_average_fit,use_least_squares_gf,use_optimal_fit)
+        result = self.numerical_jacobean(current_state)
 
         return result
 
-    def numerical_jacobean(self, current_state:np.ndarray,
-                        use_subject_average_fit:bool = False,
-                        use_least_squares_gf:bool = False,
-                        use_optimal_fit:bool = False):
+    def numerical_jacobean(self, current_state:np.ndarray):
 
         """
         Numerical differentiation algorithm
@@ -139,10 +123,7 @@ class MeasurementModel():
         
         #We are going to fill it element-wise
         #col represents the current state
-        f_state = self.evaluate_h_func(current_state,
-                                       use_subject_average_fit=use_subject_average_fit,
-                                       use_least_squares_gf=use_least_squares_gf,
-                                       use_optimal_fit=use_optimal_fit)
+        f_state = self.evaluate_h_func(current_state)
 
         #Create buffer to store the result
         state_plus_delta = current_state.copy()
@@ -157,10 +138,7 @@ class MeasurementModel():
                 state_plus_delta[col-1,0] -= self.delta
 
             #Evaluate the model and extract it 
-            f_delta = self.evaluate_h_func(state_plus_delta,
-                                            use_subject_average_fit=use_subject_average_fit,
-                                            use_least_squares_gf=use_least_squares_gf,
-                                            use_optimal_fit=use_optimal_fit)
+            f_delta = self.evaluate_h_func(state_plus_delta)
 
             #Get the derivative for the column
             manual_derivative[:,col] = ((f_delta-f_state)/(self.delta)).T
@@ -170,10 +148,7 @@ class MeasurementModel():
 
 
     def output_time_derivative(self, current_state: np.ndarray,
-                               eval_at_current_state: np.ndarray,
-                               use_subject_average_fit:bool=False,
-                               use_least_squares_gf:bool = False,
-                               use_optimal_fit:bool = False):
+                               eval_at_current_state: np.ndarray):
         """
         This function will get the time derivative of the output functions 
 
@@ -196,10 +171,7 @@ class MeasurementModel():
         delta_state = current_state + delta_vector
         
         #Get the evaluation at the new phase
-        eval_at_delta_state = self.personal_model.evaluate(delta_state.T,
-                                                           use_average_fit=use_subject_average_fit,
-                                                           use_personalized_fit=use_least_squares_gf,
-                                                           use_optimal_fit=use_optimal_fit)
+        eval_at_delta_state = self.personal_model.evaluate(delta_state.T)
 
         #Calculate the phase derivative
         phase_derivative = (eval_at_delta_state - eval_at_current_state)/self.delta

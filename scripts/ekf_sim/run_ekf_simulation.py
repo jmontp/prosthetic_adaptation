@@ -9,6 +9,7 @@ from datetime import date
 import json
 from collections import OrderedDict
 import time
+import pickle
 
 #Common imports
 import numpy as np
@@ -18,7 +19,6 @@ from simulate_ekf import simulate_ekf
 from context import kmodel
 from context import ekf
 from context import utils
-from kmodel.personalized_model_factory import PersonalizedKModelFactory
 
 #Imoprt google sheet library to store results
 import gspread
@@ -30,26 +30,42 @@ import gspread
 #Define the subject
 subject_list = [f"AB{i:02}" for i in range(1,11)]
 
-#Import the personalized model 
-factory = PersonalizedKModelFactory()
-
-#Path to model
-model_dir = (f'../../data/kronecker_models/'
-             f'left_one_out_model_{subject_list[0]}.pickle')
-
-#Load model from disk
-model = factory.load_model(model_dir)
 
 #Set the number of gait fingerprints
-NUM_GAIT_FINGERPRINTS = model.num_gait_fingerprint
-NUM_MODELS = len(model.output_names)
+NUM_GAIT_FINGERPRINTS = 2
+NUM_MODELS = 3
 
 #Define states
-NUM_STATES = model.num_states
-STATE_NAMES = model.kmodels[0].model.basis_names
+NUM_STATES = 4
+STATE_NAMES = ['phase','phase_rate','stride_length','ramp']
 
 #Get the joint names
-JOINT_NAMES = model.output_names
+JOINT_NAMES = ['jointangles_thigh_x',
+               'jointangles_shank_x',
+               'jointangles_foot_x']
+    
+
+#Path to model
+#Load in the saved model parameters
+joint_fit_info_list = []
+
+for joint in JOINT_NAMES:
+    
+    #Get the saved fit info files
+    save_location = '../../data/optimal_model_fits/' 
+    save_file_name = save_location + joint + "_optimal.p"
+
+    #Open and load the file
+    with open(save_file_name,'rb') as data_file:
+        fit_results = pickle.load(data_file)
+
+    #append the fit information
+    joint_fit_info_list.append(fit_results)
+
+
+residual_list = [np.mean(joint_fit['residual list'])
+                for joint_fit 
+                in joint_fit_info_list]
 
 ###############################################################################
 ###############################################################################
@@ -73,15 +89,15 @@ calibration_worksheet = google_file.worksheet("Calibration Testing")
 #Measurement covarience, Innovation
 POSITION_NOISE_SCALE = 1
 VELOCITY_NOISE_SCALE = 1 
-RESIDUAL_POWER = 2
+RESIDUAL_POWER = 1
 
 #Get the joint degree tracking error and then joint velocity measurement error
-r_diag = [POSITION_NOISE_SCALE*(kmodel.avg_model_residual**RESIDUAL_POWER) 
-         for kmodel
-         in model.kmodels] + \
-         [VELOCITY_NOISE_SCALE*(kmodel.avg_model_residual**RESIDUAL_POWER) 
-         for kmodel
-         in model.kmodels]
+r_diag = [POSITION_NOISE_SCALE*(residual**RESIDUAL_POWER) 
+         for residual
+         in residual_list] + \
+         [VELOCITY_NOISE_SCALE*(residual**RESIDUAL_POWER) 
+         for residual
+         in residual_list]
 
 R = np.diag(r_diag)
 

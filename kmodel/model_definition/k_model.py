@@ -7,7 +7,7 @@ that takes different function bases and combines them
 #Common imports
 import pandas as pd
 import numpy as np
-from function_bases import Basis
+from .function_bases import Basis
 from typing import List, Union
 
 class KroneckerModel():

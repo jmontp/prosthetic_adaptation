@@ -9,9 +9,6 @@ This code is meant to generate the regressor model based on a Kronecker Product 
 
 #TODO - It might be a good idea to implement numeric differentiation here
 
-
-from msilib.schema import Error
-from matplotlib.pyplot import axis
 import numpy as np
 
 
@@ -65,7 +62,7 @@ class PolynomialBasis(Basis):
             
             return out
         else:
-            raise Error("Derivative must be greater than zero")
+            raise ValueError("Derivative must be greater than zero")
         #return np.polynomial.polynomial.polyvander(x, self.n-1)
 
 
