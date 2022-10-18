@@ -1,3 +1,8 @@
+"""
+This file is deprecated
+"""
+
+
 #Imoprt the kronecker model
 from .context import kmodel
 from kmodel.personalized_model_factory import PersonalizedKModelFactory

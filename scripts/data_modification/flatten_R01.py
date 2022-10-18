@@ -7,7 +7,6 @@ import threading
 from functools import lru_cache
 import os
 from scipy.io import loadmat
-from sqlalchemy import column
 
 
 #TODO - verify if I can delete this function since I think its not neccesary

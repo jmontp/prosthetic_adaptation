@@ -8,6 +8,7 @@ of the Naive Least Squares (NLS) vs the Inter-Subject Average (ISA)
 
 #Import Common libraries
 import pickle
+import json
 
 #Common imports
 import numpy as np
@@ -126,53 +127,56 @@ noise_columns_header = [state + 'process model noise'
 column_headers = STATE_NAMES + JOINT_NAMES \
     + JOINT_SPEED + noise_columns_header + ['Subject','Test','conditions']
 
-dataframe = pd.DataFrame(columns=column_headers).astype('object')
 
 
 #Load samples 
 process_model_noise_samples = np.load('process_model_noise_samples.npy')
 
-for process_model_noise_index in range(process_model_noise_samples.shape[0]):
-
-    #Process noise
-    #Phase, Phase, Dot, Stride_length, ramp, gait fingerprints
-    # PHASE_VAR_AVG =         0     
-    # PHASE_DOT_VAR_AVG =     8E-7 #2E-8
-    # STRIDE_LENGTH_VAR_AVG = 8E-7  #7E-8
-    # RAMP_VAR_AVG =          5E-5
-
-    #Test calibration
-    # PHASE_VAR_AVG =         0     
-    # PHASE_DOT_VAR_AVG =     8E-7
-    # STRIDE_LENGTH_VAR_AVG = 1E-6
-    # RAMP_VAR_AVG =          6E-4
-
-    #From tuner
-    # scale = 7e-2
-    # PHASE_VAR_AVG =         0     
-    # PHASE_DOT_VAR_AVG =     2E+1 * scale
-    # STRIDE_LENGTH_VAR_AVG = 1E-5 * scale
-    # RAMP_VAR_AVG =          1E-3 * scale
-
-    # Q = [PHASE_VAR_AVG,
-    #         PHASE_DOT_VAR_AVG,
-    #         STRIDE_LENGTH_VAR_AVG,
-    #         RAMP_VAR_AVG
-    #         ]
+#Verify current progress
+try:
+    #Load in existing process if 
+    dataframe = pd.read_csv("first_paper_NLS_vs_ISA.csv")
+    first_test_number_of_trials = 125*10
+    # start_index = int(len(dataframe)/2)
+    #Finished all of subject 1 as a trial, set to zero so that 
+    # we can do all the other subjects without having to repeat subject 1
+    start_index = 0
     
+#If the file is not found, create a new pandas object to keep track of progress
+except FileNotFoundError:
+    dataframe = pd.DataFrame(columns=column_headers).astype('object')
+    start_index = 0
+    
+
+#DEBUG - I set this manually since I had a weird error where it stopped 
+# running the simulations at index 9
+start_index = 0
+
+#Create a generator for the indexes that we want to visit
+process_model_noise_index_list =  range(start_index, 
+                                        process_model_noise_samples.shape[0])
+
+#DEBUG -- Take a subset to quickly run through the test and debug the csv saving
+# subject_list = subject_list[1:]
+
+#Load the speed ramp condition, it will be fixed for every subject and  
+# process model tuning
+with open('random_ramp_speed_condition.pickle','rb') as file:
+    random_test_condition = pickle.load(file)
+
+#Iterate through all the process model tunings
+for process_model_noise_index in process_model_noise_index_list:
+
+    #Print the tuning that you are doing right now
     print((f"Testing Process Model Noise Sample {process_model_noise_index} "
            f"{process_model_noise_samples[process_model_noise_index]}"))
+    
+    #Convert the process model tuning array into a matrix
     q_diag = process_model_noise_samples[process_model_noise_index]
     Q = np.diag(q_diag)
 
-
-    #Generate a random list of conditions to test out
-    random_test_condition = generate_random_condition()
-
-
-    #DEBUG -- Take a subset to quickly run through the test and debug the csv saving
-    subject_list = subject_list[:1]
-
+    
+    #Apply the process model tuning to all the subjects
     for subject_index, subject in enumerate(subject_list):
         
         #Generate the validation data for this subject
@@ -181,6 +185,11 @@ for process_model_noise_index in range(process_model_noise_samples.shape[0]):
                             STATE_NAMES,
                             JOINT_NAMES,
                             random_test_condition)
+        
+        #Convert the condition list into tuple of tuples from list of lists
+        # This will make it hashable to enable elimination of rows through 
+        # df.drop_duplicates
+        condition_list = json.dumps(condition_list)
         
         #Do not real time plot after subject AB01
         if subject_index > 0:
@@ -204,7 +213,7 @@ for process_model_noise_index in range(process_model_noise_samples.shape[0]):
                     = simulate_ekf(ekf_instance,state_data,sensor_data,
                                 plot_local=RT_PLOT)
             print((f"State rmse {rmse_testr}, "
-                    "measurement rmse {measurement_rmse}"))
+                    f"measurement rmse {measurement_rmse}"))
             
             #Get the data to save
             data = [[*rmse_testr, *measurement_rmse, *q_diag, subject,
@@ -212,7 +221,7 @@ for process_model_noise_index in range(process_model_noise_samples.shape[0]):
         except AssertionError:
             print(f"Failed Assertion on {q_diag}")
             #Set data to invalid
-            data = [*([None]*10), *q_diag, subject, 'NSL',condition_list]
+            data = [[*([None]*10), *q_diag, subject, 'NSL',condition_list]]
       
         
         #Add to stored data
@@ -237,20 +246,33 @@ for process_model_noise_index in range(process_model_noise_samples.shape[0]):
                         = simulate_ekf(ekf_instance,state_data,sensor_data,
                                     plot_local=RT_PLOT)
                     
-            print(f"State rmse {rmse_testr}, measurement rmse {measurement_rmse}")
+            print(f"State rmse {rmse_testr}, "
+                  f"measurement rmse {measurement_rmse}")
             
             #Create CSV data vector
             data = [[*rmse_testr, *measurement_rmse, *q_diag, subject,
                     'ISA',condition_list]]
+            
         except AssertionError:
             print(f"Failed Assertion on {q_diag}")
             #Set data to invalid
-            data = [*([None]*10), *q_diag, subject, 'ISA',condition_list]
+            data = [[*([None]*10), *q_diag, subject, 'ISA',condition_list]]
             
         #Add to stored data
         dataframe = pd.concat([dataframe,pd.DataFrame(data,columns=column_headers)],
                             ignore_index=True)
 
-
+        ##Since I had to run duplicate tests due to a bug, make sure that 
+        # we don't have duplicate rows which can alter the data analysis
+        dataframe.drop_duplicates(ignore_index=True)
+        
+        #Add offset of table for visualization
+        state_offset_list = ['phase','phase_dot','stride_length', 'ramp']
+        offset_labels = [state+'_row_offset' for state in state_offset_list]
+        
+        state_offset = np.concatenate([dataframe[state_offset_list].values[1:], 
+                                       [[None]*len(offset_labels)]])
+        dataframe[offset_labels] = state_offset
+        
         ##Save to CSV
         dataframe.to_csv("first_paper_NLS_vs_ISA.csv", sep=',')

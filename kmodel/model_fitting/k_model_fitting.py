@@ -8,7 +8,7 @@ from typing import List, Union
 from dataclasses import dataclass
 
 #Kronecker model imports
-from context import model_definition
+from .context import model_definition
 from model_definition.k_model import KroneckerModel
 from model_definition.function_bases import Basis
 import pandas as pd

@@ -30,8 +30,9 @@ def ekf_loader(subject:str,
                R:np.ndarray,
                state_lower_limit:List[float],
                state_upper_limit:List[float],
+               measurement_model:MeasurementModel=None,
                use_subject_average:bool = False,
-               heteroschedastic_model = True
+               heteroschedastic_model = True,
             ):
     
     """
@@ -51,6 +52,7 @@ def ekf_loader(subject:str,
         Length = n
     us_subject_average (bool): uses the one-left-out subject average model, 
         that leaves out the specified subject. 
+    fit_model (bool): 
     heteroschedastic_model (bool): Uses the measurement model heteroschedastic
     model when set to true.
     
@@ -59,26 +61,31 @@ def ekf_loader(subject:str,
         ekf_instance (Extended_Kalman_Filter)
     """
     
+    #Verify if a measurement model has been loaded in
+    # if not, import a stored measurement model for the given subject
+    if measurement_model is None:
+
+        ##Import the personalized model 
+        #Load in the average model without the specified subject
+        if use_subject_average is True:
+            fitted_model_list = [load_simple_models(joint,"AVG",
+                                                    leave_subject_out=subject) 
+                                for joint 
+                                in joint_list]
+        #Load the subject fit
+        else:    
+            fitted_model_list = [load_simple_models(joint,subject) 
+                                for joint 
+                                in joint_list]
+        
+        #Generate a Personal measurement function 
+        model = PersonalMeasurementFunction(fitted_model_list, 
+                                            joint_list, subject)
+        #Initialize the measurement model
+        measurement_model = MeasurementModel(model,
+                                            calculate_output_derivative=True)
     
-    ##Import the personalized model 
-    #Load in the average model without the specified subject
-    if use_subject_average is True:
-        fitted_model_list = [load_simple_models(joint,"AVG",
-                                                leave_subject_out=subject) 
-                            for joint 
-                            in joint_list]
-    #Load the subject fit
-    else:    
-        fitted_model_list = [load_simple_models(joint,subject) 
-                            for joint 
-                            in joint_list]
-    
-    #Generate a Personal measurement function 
-    model = PersonalMeasurementFunction(fitted_model_list, 
-                                        joint_list, subject)
-    #Initialize the measurement model
-    measurement_model = MeasurementModel(model,
-                                         calculate_output_derivative=True)
+    # TODO - add in the output model for torque tracking performance
     # output_model = MeasurementModel(model_output, calculate_output_derivative=False)
 
 

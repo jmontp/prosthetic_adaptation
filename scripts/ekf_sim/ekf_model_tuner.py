@@ -118,22 +118,6 @@ COV_DIAG = 1e-5
 initial_state_covariance = np.diag([COV_DIAG]*len(state_list))
 
 
-
-##Process Model Noise Tunning
-scale = 1e+0
-PHASE_VAR_AVG =         0     
-PHASE_DOT_VAR_AVG =     2E+1 * scale
-STRIDE_LENGTH_VAR_AVG = 1E-5 * scale
-RAMP_VAR_AVG =          1E-3 * scale
-
-Q_dig = [PHASE_VAR_AVG,
-         PHASE_DOT_VAR_AVG,
-         STRIDE_LENGTH_VAR_AVG,
-         RAMP_VAR_AVG
-         ]
-
-Q = np.diag(Q_dig)
-
 upper_limits = np.array([ np.inf, np.inf, np.inf, 15]).reshape(-1,1)
 lower_limits = np.array([-np.inf, -np.inf,0.5,-15]).reshape(-1,1)
 
@@ -168,54 +152,82 @@ R = np.diag(r_diag)
 #List of disturbances
 epsilon_list = [0.40, 0.3, 0.5, 5]
 
-#Run a simulation per state
-for state_i, state in enumerate(state_list):
 
-    print(f"Doing the simulation on {state}")
-    
-    #Initial state
-    initial_state_copy = initial_state.copy()
-    initial_state_copy[state_i] += epsilon_list[state_i]
-    
-    #Initialize the EKF instance
-    ekf_instance = Extended_Kalman_Filter(initial_state_copy, initial_state_covariance, 
-                                      d_model, Q, 
-                                      measurement_model, R,
-                                      lower_state_limit=lower_limits,
-                                      upper_state_limit=upper_limits,# output_model=output_model,
-                                      heteroschedastic_model = True
-                                    )
-    
-    #Run the simulation
-    # input("Press enter to start the simulation")
-    for j in range(num_timesteps):
-        
-        #Get the current state
-        current_state = np.array([target_phase[j], target_phase_dot, 
-                         target_stride_length, target_ramp]).reshape(-1,1)
-        
-        #Get the current expected measurement
-        current_measurement = measurement_model.evaluate_h_func(current_state) \
-            # + np.sqrt([20.6, 13.0, 14.0]*2).reshape(-1,1)
-        
-        #Get the next state for the ekf
-        next_state,predicted_covar = ekf_instance.calculate_next_estimates(dt, current_measurement)
-        next_state = next_state.T
+#Load the grid of fits that we want to test
+process_model_noise_samples = np.load('process_model_noise_samples.npy')
 
-        #Plot the expected state against the real state
-        next_state = next_state.ravel()
-        current_state = current_state.ravel()
+# num_repeatitions = 1
+num_repetitions = process_model_noise_samples.shape[0]
+
+for process_model_noise_i in range(num_repetitions):
+   
+    # ##Process Model Noise Tunning
+    # scale = 1e+0
+    # PHASE_VAR_AVG =         0     
+    # PHASE_DOT_VAR_AVG =     2E+1 * scale
+    # STRIDE_LENGTH_VAR_AVG = 1E-5 * scale
+    # RAMP_VAR_AVG =          1E-3 * scale
+
+    # q_dig = [PHASE_VAR_AVG,
+    #         PHASE_DOT_VAR_AVG,
+    #         STRIDE_LENGTH_VAR_AVG,
+    #         RAMP_VAR_AVG
+    #         ]
+    q_dig = process_model_noise_samples[process_model_noise_i]
+    Q = np.diag(q_dig)
+    print(f"Next Test is on {q_dig}")
+    input("Press enter to continue")
+
+
+
+    #Run a simulation per state
+    for state_i, state in enumerate(state_list):
+
+        # print(f"Doing the simulation on {state}")
         
-        data = [next_state[0],      #Estimated Phase
-                current_state[0],   #Actual Phase
-                next_state[1],      #Estimated Phase Dot
-                next_state[2],      #Estimated Stride Length
-                current_state[1],   #Actual Phase Dot
-                current_state[2],   #Actual Stride Length
-                next_state[3],      #Estimated Ramp
-                current_state[3],   #Actual Ramp
-            ]
+        #Initial state
+        initial_state_copy = initial_state.copy()
+        initial_state_copy[state_i] += epsilon_list[state_i]
         
-        #Send Data
-        client.send_array(data)
+        #Initialize the EKF instance
+        ekf_instance = Extended_Kalman_Filter(initial_state_copy, initial_state_covariance, 
+                                        d_model, Q, 
+                                        measurement_model, R,
+                                        lower_state_limit=lower_limits,
+                                        upper_state_limit=upper_limits,# output_model=output_model,
+                                        heteroschedastic_model = True
+                                        )
         
+        #Run the simulation
+        # input("Press enter to start the simulation")
+        for j in range(num_timesteps):
+            
+            #Get the current state
+            current_state = np.array([target_phase[j], target_phase_dot, 
+                            target_stride_length, target_ramp]).reshape(-1,1)
+            
+            #Get the current expected measurement
+            current_measurement = measurement_model.evaluate_h_func(current_state) \
+                # + np.sqrt([20.6, 13.0, 14.0]*2).reshape(-1,1)
+            
+            #Get the next state for the ekf
+            next_state,predicted_covar = ekf_instance.calculate_next_estimates(dt, current_measurement)
+            next_state = next_state.T
+
+            #Plot the expected state against the real state
+            next_state = next_state.ravel()
+            current_state = current_state.ravel()
+            
+            data = [next_state[0],      #Estimated Phase
+                    current_state[0],   #Actual Phase
+                    next_state[1],      #Estimated Phase Dot
+                    next_state[2],      #Estimated Stride Length
+                    current_state[1],   #Actual Phase Dot
+                    current_state[2],   #Actual Stride Length
+                    next_state[3],      #Estimated Ramp
+                    current_state[3],   #Actual Ramp
+                ]
+            
+            #Send Data
+            client.send_array(data)
+            
