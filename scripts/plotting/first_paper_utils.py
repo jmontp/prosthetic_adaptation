@@ -70,8 +70,8 @@ def filter_to_good_range_case(df, filter=True, inplace=False):
     #Create a base for the detailed analysis
     #Part 2 - select only the ones that we want, chosen by looking at the 
     # heatmap
-    phase_noise_good = 1e-6
-    stride_length_noise_good = 1e-7
+    phase_noise_good = 1e-7
+    stride_length_noise_good = 1e-8
     ramp_noise_good = 1e-4
     good_noise_list = [phase_noise_good, 
                        stride_length_noise_good, 
@@ -109,9 +109,9 @@ def filter_to_optimal_case(df, test_type):
     max_ramp = np.max(df['ramp'])
     
     #Create a new column that is the cost function
-    df['cost_func'] = np.power(df['phase'] / max_phase_rmse,2) \
-                    + np.power(df['stride_length'] / max_stride_length,2) \
-                    + np.power(df['ramp'] / max_ramp, 2)
+    df['cost_func'] = np.power(df['phase'] / max_phase_rmse,1) \
+                    + np.power(df['stride_length'] / max_stride_length,1) \
+                    + np.power(df['ramp'] / max_ramp, 1)
                     
     #Create a pivot table to find the test that has the best average
     # cost function when only looking at the previous method
@@ -123,7 +123,7 @@ def filter_to_optimal_case(df, test_type):
     else: #We want to filter for the supplied test case
         df_filt = df[df['Test']==test_type]
 
-        
+    #Average out the subjects
     df_agg = (df_filt).groupby(gait_state_noise_list).mean()
     
     #Get the minimum cost condition. 
@@ -133,9 +133,10 @@ def filter_to_optimal_case(df, test_type):
     #Filter for this condition
     cond_filter = (df[gait_state_noise_list] == min_cost_condition).all(axis=1)
     df = df[cond_filter]
-    
+        
     assert len(df) == 20, ("Only one condition must have passed, "
-                           "therefore, it should have 20 datapoints")
+                           "therefore, it should have 20 datapoints"
+                           f' - current datapoints {len(df)}')
     
     return df
 

@@ -18,6 +18,7 @@ import pandas as pd
 from simulate_ekf import simulate_ekf
 from generate_simulation_validation_data import generate_data
 from generate_simulation_validation_data import generate_random_condition
+from fit_least_squares_model import fit_measurement_model
 from ekf_loader import ekf_loader
 from context import kmodel
 from context import ekf
@@ -150,11 +151,13 @@ except FileNotFoundError:
 
 #DEBUG - I set this manually since I had a weird error where it stopped 
 # running the simulations at index 9
-start_index = 0
+start_index = 89
 
 #Create a generator for the indexes that we want to visit
 process_model_noise_index_list =  range(start_index, 
                                         process_model_noise_samples.shape[0])
+print(f"Total number of samples {process_model_noise_samples.shape[0]}")
+
 
 #DEBUG -- Take a subset to quickly run through the test and debug the csv saving
 # subject_list = subject_list[1:]

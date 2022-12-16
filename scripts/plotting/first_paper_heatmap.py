@@ -16,7 +16,8 @@ from first_paper_utils import filter_to_good_range_case, phase_rate_noise, \
 alt.data_transformers.disable_max_rows()
 
 #Read in data
-data_location = '../ekf_sim/first_paper_NLS_vs_ISA.csv'
+data_location = '../ekf_sim/first_paper_NLS_vs_ISA_multiple_orders_of_magnitude.csv'
+# data_location = '../ekf_sim/first_paper_NLS_vs_ISA.csv'
 df = pd.read_csv(data_location)
 
 #Name the gait state rmse entries in the dataset

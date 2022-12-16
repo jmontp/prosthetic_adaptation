@@ -3,8 +3,6 @@ This file is meant to plot the pairwise box plot of the good region
 for the first test in the offline ekf paper
 """
 
-
-from xml import dom
 import altair as alt
 import pandas as pd 
 from first_paper_utils import filter_to_good_range_case, filter_to_optimal_case
@@ -18,12 +16,24 @@ alt.data_transformers.disable_max_rows()
 
 #Read the data in 
 data_location = '../ekf_sim/first_paper_NLS_vs_ISA.csv'
+
 df, title = pd.read_csv(data_location), 'All Data'
 
 
+#Configuration for the first part of the paper NLS vs ISA
+baseline_test = 'ISA'
+comparison_test = 'NSL'
+
+#Configuration for the second part of the paper PCA_GF vs ISA
+# baseline_test = 'ISA'
+# comparison_test = 'PCA_GF'
+
+#Filter for the test that we will compare on
+df = df[(df['Test']==baseline_test) | (df['Test']==comparison_test)]
+
 #Filter data to optimal case
-df = filter_to_good_range_case(df)
-test_type = 'ISA'
+# df = filter_to_good_range_case(df) #Comment line out for all the "good" range
+test_type = baseline_test
 df_optimal = filter_to_optimal_case(df,test_type)
 
 
@@ -50,7 +60,7 @@ change_dict = {old:new for old,new in zip(gait_state_diff,new_gait_states)}
 # We want to create two plots - one with the units in stride length
 # and one with the units in percent difference. Therefore, calculate the 
 # median value that we will use to scale the axis by grouping across all subjects
-gait_state_ISA_median = {state:df[df['Test'] == 'ISA'].groupby(gait_state_noise_list).mean()[state].median()
+gait_state_ISA_median = {state:df[df['Test'] == baseline_test].groupby(gait_state_noise_list).mean()[state].median()
                          for state
                          in gait_states}
 
@@ -66,8 +76,8 @@ for df_temp in [df,df_optimal]:
     df2=pd.DataFrame()
 
     #Get filters for the tests that are ran
-    ISA = df_temp[df_temp['Test'] == 'ISA'].reset_index(drop=True)
-    NSL = df_temp[df_temp['Test'] == 'NSL'].reset_index(drop=True)
+    ISA = df_temp[df_temp['Test'] == baseline_test].reset_index(drop=True)
+    NSL = df_temp[df_temp['Test'] == comparison_test].reset_index(drop=True)
 
     #Aggregate t-test results per state
     df_t_test_result_list = []
@@ -107,8 +117,12 @@ for df_temp in [df,df_optimal]:
     #Store the t-test result list
     t_test_results_list.append(df_t_test_result_list)
 
-#Assign the processed datasets    
+#Assign the processed datasets and calculate the number of comparisons   
 df, df_optimal = df_output_list
+num_datapoints = len(df)
+
+#Update the title to have the number of datapoints
+title = title + f" | n = {num_datapoints}"
 
 #Rename gait states to new scheme
 gait_state_diff = new_gait_states
@@ -136,7 +150,9 @@ def create_subplot(diff_label, diff_label_norm,state_index):
     # space buffer. Can disable by passing in nice = False
     median_scale_fix = gait_state_ISA_median[gait_states[state_index]] 
     
-    min_scale_norm = -0.05 #-5 percent
+    
+    min_scale_norm = -0.30 #-5 percent
+    # min_scale_norm = -0.05 #-5 percent
     max_scale_norm = 0.45 #55 percent
     
     
@@ -161,13 +177,19 @@ def create_subplot(diff_label, diff_label_norm,state_index):
         tooltip=f'{diff_label}:Q',
     )
     
+    #Create variables to offset text so it does not sit on top of the mark
+    dx = -10
+    dy = 10
+    
     #Create the text anotation
-    text_annotation = alt.Chart(df).mark_text(
+    # text_annotation = alt.Chart(df).mark_text(
+    text_annotation = alt.Chart(df_optimal).mark_text(
         align='right',
-        dx=-10 #Nudges for the box plot  
+        dx=dx, #Nudges for the box plot  
+        dy=dy  #Only do this when applying the df_optimal as the data
     ).encode(
         y=alt.Y(f'median({diff_label}):Q',title=None),
-        text=alt.Text(f'median({diff_label}):Q', format='.1')
+        text=alt.Text(f'median({diff_label}):Q', format='.0e')
     )
 
     #State Pairwise Normalized difference scale 
@@ -189,9 +211,12 @@ def create_subplot(diff_label, diff_label_norm,state_index):
     )
     
     #Create the text anotation
-    text_annotation_norm = alt.Chart(df).mark_text(
+    # text_annotation_norm = alt.Chart(df).mark_text(
+    text_annotation_norm = alt.Chart(df_optimal).mark_text(
+
         align='left',
-        dx=10 #Nudges for the box plot  
+        dx=-dx, #Nudges for the box plot  
+        dy=dy  #Only do this when applying the df_optimal as the data
     ).encode(
         y=alt.Y(f'median({diff_label_norm}):Q',title=None),
         text=alt.Text(f'median({diff_label_norm}):Q', format='.1%')

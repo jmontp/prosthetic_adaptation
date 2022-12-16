@@ -14,20 +14,25 @@ import json
 import numpy as np
 import pandas as pd
 from itertools import product
+from fit_least_squares_model import fit_measurement_model
 
 #Import custom library
 from simulate_ekf import simulate_ekf
 from generate_simulation_validation_data import generate_data
 from generate_simulation_validation_data import generate_random_condition
-from create_partial_data_conditions import task_data_constraint_list
-from create_partial_data_conditions import filter_data_for_condition
+from generate_partial_ramp_speed_conditions import task_data_constraint_list
+from generate_partial_ramp_speed_conditions import filter_data_for_condition
 from ekf_loader import ekf_loader
 from context import kmodel
 from context import ekf
 from context import utils
-from kmodel.model_fitting import k_model_fitting
+from kmodel import model_fitting
+from model_fitting import k_model_fitting
+from model_fitting import load_models
 from kmodel.model_definition import function_bases
 from kmodel.model_definition import k_model
+from kmodel.model_definition import personal_measurement_function
+from ekf.measurement_model import MeasurementModel
 
 ###############################################################################
 ###############################################################################
@@ -106,21 +111,6 @@ output_list = [#'jointmoment_hip_x','jointmoment_knee_x','jointmoment_ankle_x',
                'jointangles_thigh_x', 'jointangles_shank_x','jointangles_foot_x']
 
 
-## Defines the model and which states will be used
-states = ['phase', 'phase_dot', 'stride_length', 'ramp']
-
-phase_basis = function_bases.FourierBasis(20, 'phase')
-phase_dot_basis = function_bases.PolynomialBasis(2,'phase_dot')
-stride_length_basis = function_bases.PolynomialBasis(2,'stride_length')
-ramp_basis = function_bases.PolynomialBasis(2,'ramp')
-
-
-#Create a list with all the basis functions
-basis_list = [phase_basis, phase_dot_basis, stride_length_basis, ramp_basis]
-
-#Create the kronecker model
-k_model_instance = k_model.KroneckerModel(basis_list)
-
 ###############################################################################
 ###############################################################################
 # Misc Simulation Settings
@@ -175,18 +165,47 @@ noise_columns_header = [state + 'process model noise'
                         for state
                         in STATE_NAMES]
 column_headers = STATE_NAMES + JOINT_NAMES \
-    + JOINT_SPEEDS + noise_columns_header + ['Subject','Test','conditions']
+    + JOINT_SPEEDS + noise_columns_header + ['Subject','Test',
+                                             'conditions','num conditions',
+                                             'num_train_steps']
 
 
+
+
+###############################################################################
+###############################################################################
+# Load the stored data
+
+SAVE_FILE_NAME = "online_ls_test.csv"
+
+#Verify current progress
+try:
+    #Load in existing process if 
+    dataframe = pd.read_csv(SAVE_FILE_NAME)
+
+    first_test_number_of_trials = 125*10
+   
+    
+#If the file is not found, create a new pandas object to keep track of progress
+except FileNotFoundError:
+    dataframe = pd.DataFrame(columns=column_headers).astype('object')
+    start_index = 0
+
+#Load the speed ramp condition, it will be fixed for every subject and  
+# process model tuning
+with open('random_ramp_speed_condition.pickle','rb') as file:
+    random_test_condition = pickle.load(file)
+
+#Create a string that contains the file information
+file_location = ("../../data/flattened_dataport/training/"
+                    "dataport_flattened_training_{}.parquet")
+    
 #Iterate through the task constraints to do least squares with 
-for task_data_constraint in task_data_constraint_list:
+for task_index, task_data_constraint in enumerate(task_data_constraint_list):
 
-    print(f"Testing Least Squares Condition {task_data_constraint} ")
+    print((f"Testing Least Squares Condition {task_data_constraint}"
+          f" -- {task_index}/{len(task_data_constraint_list)}"))
     
-
-    
-    #Generate a random list of ramp, speed task conditions to test out
-    random_test_condition = generate_random_condition()
    
     #Run the simulation for all the subjects
     for subject_index, subject in enumerate(subject_list):
@@ -195,15 +214,53 @@ for task_data_constraint in task_data_constraint_list:
         ###################################################################
         ###################################################################
         # Do least squares fit for each the naive least squares and the 
+        # gait fingerprint least squares
+        
+        #Get the subject-specific fit 
+        subject_data = pd.read_parquet(file_location.format(subject))
+        
+        #Filter for a particular amount of steps
+        steps_to_train_on = 150
+        
+        #Filter the data to only contain the current conditions and
+        # number of steps to train on
+        subject_data = filter_data_for_condition(subject_data,
+                                                 task_data_constraint,
+                                                 steps_to_train_on)
+        
+        
         # optimal least squares
+        least_squares_measurement_model = fit_measurement_model(subject, 
+            subject_data,output_list)
         
-        #Load the training data
-        file_location = ("../../data/flattened_dataport/validation/"
-                         "dataport_flattened_training_{}.parquet")
+        # Craete the personalized least squares model
+        gait_fingerprint_model_list = load_models.load_personalized_models(
+            output_list,subject,subject_data)
         
-        #Create the fitting object
-        model_fitter = k_model_fitting
+        #Create a measurement model using the gait fingerprint personal model
+        gait_fingerprint_measurement_model = \
+            MeasurementModel(gait_fingerprint_model_list, 
+                             calculate_output_derivative=True)
         
+        
+        
+        #Load the intersubject average
+        fitted_model_list = [load_models.load_simple_models(joint,"AVG",
+                                                leave_subject_out=subject) 
+                                for joint 
+                                in output_list]
+       
+        
+        #Generate a Personal measurement function 
+        model = personal_measurement_function.PersonalMeasurementFunction(fitted_model_list, 
+                                            output_list, subject)
+        #Initialize the measurement model
+        ISA_measurement_model = MeasurementModel(model,
+                                            calculate_output_derivative=True)
+        
+            
+        ###################################################################
+        ###################################################################
         #Generate the validation data for this subject
         state_data, sensor_data, steps_per_condition, condition_list\
             = generate_data(subject, 
@@ -211,10 +268,8 @@ for task_data_constraint in task_data_constraint_list:
                             JOINT_NAMES,
                             random_test_condition)
         
-        #Convert the condition list into tuple of tuples from list of lists
-        # This will make it hashable to enable elimination of rows through 
-        # df.drop_duplicates
-        condition_list = json.dumps(condition_list)
+        #Convert conditoin list to a tuple instead so that it is hashable
+        condition_list = tuple(condition_list)
         
         #Do not real time plot after subject AB01
         if subject_index > 0:
@@ -225,12 +280,13 @@ for task_data_constraint in task_data_constraint_list:
             input("Press enter between tests")
         print(f"{subject} Naive Least Squares")
         
-        
+        ###################################################################
+        ###################################################################
         ## Do the personalized model fit 
         ekf_instance = ekf_loader(subject, JOINT_NAMES, 
                                 initial_state, initial_state_covar, Q, R, 
                                 lower_limits, upper_limits,
-                                use_subject_average=False)
+                                measurement_model=least_squares_measurement_model)
         
         #Run the simulation
         try:
@@ -240,31 +296,37 @@ for task_data_constraint in task_data_constraint_list:
             print((f"State rmse {rmse_testr}, "
                     f"measurement rmse {measurement_rmse}"))
             
-            #Get the data to save
-            data = [[*rmse_testr, *measurement_rmse, *q_diag, subject,
-                 'NSL',condition_list]]
+            results = [*rmse_testr, *measurement_rmse]
+            
+            
         except AssertionError:
             print(f"Failed Assertion on {q_diag}")
             #Set data to invalid
-            data = [[*([None]*10), *q_diag, subject, 'NSL',condition_list]]
-      
-        
+            results = ([None]*10)
+               
+        #Get the data to save
+        data = [[*results, *q_diag, subject,'NLS',task_data_constraint, 
+                 len(task_data_constraint),steps_to_train_on]]
+            
         #Add to stored data
         dataframe = pd.concat([dataframe,pd.DataFrame(data,columns=column_headers)],
                             ignore_index=True)
 
+        ###################################################################
+        ###################################################################
+        # Do the gait fingerprint analysis
         
         #Wait for the plotter to catch up, if not it will crash
         if RT_PLOT:
             input("Press enter between tests")
         
-        print(f"{subject} Inter-Subject Average")
+        print(f"{subject} Gait Fingerprint")
         #Run the test for the subject with avearge model fit
         ## Do the personalized model fit 
         ekf_instance = ekf_loader(subject, JOINT_NAMES, 
                                 initial_state, initial_state_covar, Q, R, 
                                 lower_limits, upper_limits,
-                                use_subject_average=True)
+                                measurement_model=gait_fingerprint_measurement_model)
         try:
             #Run the simulation
             rmse_testr, measurement_rmse, rmse_delay\
@@ -275,29 +337,71 @@ for task_data_constraint in task_data_constraint_list:
                   f"measurement rmse {measurement_rmse}")
             
             #Create CSV data vector
-            data = [[*rmse_testr, *measurement_rmse, *q_diag, subject,
-                    'ISA',condition_list]]
+            results = [*rmse_testr, *measurement_rmse]
+
             
         except AssertionError:
             print(f"Failed Assertion on {q_diag}")
             #Set data to invalid
-            data = [[*([None]*10), *q_diag, subject, 'ISA',condition_list]]
+            results = ([None]*10)
+
+        data = [[*results, *q_diag, subject, 'PCA_GF',task_data_constraint, 
+                 len(task_data_constraint),steps_to_train_on]]
             
         #Add to stored data
         dataframe = pd.concat([dataframe,pd.DataFrame(data,columns=column_headers)],
                             ignore_index=True)
 
+        
+        
+        ###################################################################
+        ###################################################################
+        # Do the intersubject average model
+        
+        #Wait for the plotter to catch up, if not it will crash
+        if RT_PLOT:
+            input("Press enter between tests")
+        
+        print(f"{subject} Inter Subject Average")
+        #Run the test for the subject with avearge model fit
+        ## Do the personalized model fit 
+        ekf_instance = ekf_loader(subject, JOINT_NAMES, 
+                                initial_state, initial_state_covar, Q, R, 
+                                lower_limits, upper_limits,
+                                measurement_model=ISA_measurement_model)
+        try:
+            #Run the simulation
+            rmse_testr, measurement_rmse, rmse_delay\
+                        = simulate_ekf(ekf_instance,state_data,sensor_data,
+                                    plot_local=RT_PLOT)
+                    
+            print(f"State rmse {rmse_testr}, "
+                  f"measurement rmse {measurement_rmse}")
+            
+            #Create CSV data vector
+            results = [*rmse_testr, *measurement_rmse]
+            
+        except AssertionError:
+            print(f"Failed Assertion on {q_diag}")
+            #Set data to invalid
+            results = ([None]*10)
+
+        data = [[*results, *q_diag, subject, 'ISA',task_data_constraint, 
+                 len(task_data_constraint),steps_to_train_on]]
+        
+        #Add to stored data
+        dataframe = pd.concat([dataframe,pd.DataFrame(data,
+                                                      columns=column_headers)],
+                            ignore_index=True)
+        
+        
+        ###################################################################
+        ###################################################################
+        # Save the data
+        
         ##Since I had to run duplicate tests due to a bug, make sure that 
         # we don't have duplicate rows which can alter the data analysis
         dataframe.drop_duplicates(ignore_index=True)
         
-        #Add offset of table for visualization
-        state_offset_list = ['phase','phase_dot','stride_length', 'ramp']
-        offset_labels = [state+'_row_offset' for state in state_offset_list]
-        
-        state_offset = np.concatenate([dataframe[state_offset_list].values[1:], 
-                                       [[None]*len(offset_labels)]])
-        dataframe[offset_labels] = state_offset
-        
         ##Save to CSV
-        dataframe.to_csv("online_ls_test.csv", sep=',')
+        dataframe.to_csv(SAVE_FILE_NAME, sep=',')

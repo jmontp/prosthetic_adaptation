@@ -8,7 +8,8 @@ from typing import List, Union
 from dataclasses import dataclass
 
 #Kronecker model imports
-from .context import model_definition
+#Remove '.' from context to run calculate_optimal_fits.py
+from .context import model_definition 
 from model_definition.k_model import KroneckerModel
 from model_definition.function_bases import Basis
 import pandas as pd
@@ -150,6 +151,7 @@ class KModelFitter():
             RTR += R.T @ (R * W)
             yTR += y.T @ (R * W)
             RTy += R.T @ (y * W)
+            
             if np.isnan(RTy).sum() > 0:
                 raise ValueError
             

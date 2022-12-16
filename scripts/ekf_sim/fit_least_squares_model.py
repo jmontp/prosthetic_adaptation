@@ -16,8 +16,13 @@ from kmodel.model_fitting import k_model_fitting
 from kmodel.model_definition import function_bases
 from kmodel.model_definition import k_model
 from kmodel.model_definition import fitted_model
+from kmodel.model_definition import personal_measurement_function
+from ekf.measurement_model import MeasurementModel
 
+#Other common imports
 import pickle
+from typing import List
+
 
 ###############################################################################
 ###############################################################################
@@ -67,28 +72,43 @@ subject_data_list = [(sub,pd.read_parquet(file_location(sub))) for sub in subjec
 
 
 #Initialize the model fitter object
-model_fitter = k_model.KModelFitter()
+model_fitter = k_model_fitting.KModelFitter()
 
-#Calculate the optimal models for each joint
-for output_name in output_list:
-    
-    #Create lists for this output 
-    model_fits = []
-    RTR_list = []
-    residual_list = []
-    residual_variance_list = []
-    num_datapoints_list = []
 
+
+
+def fit_measurement_model(subject:str,
+                          subject_data:pd.DataFrame,
+                          output_list:List[str]):
+    """
+    This function will generate a measurement model based on the outputs that
+    are fed in
     
-    for subject_name, subject_data in subject_data_list:
+    Args: 
+    
+    subject - string that represents the subject name. In the format AB0x
+        where x is the subject number
+        
+    subject_data - this is the data from the dataframe
+    
+    output_list - This is a list of the strings for each output name
+    
+    
+    """
+    
+    #Create a list to store the simple model fit
+    simple_fitted_model_list = []
+    
+    #Calculate the optimal models for each joint
+    for output_name in output_list:
         
         #Get the model fit for the subject
         model_fit, (residual,RTR,num_datapoints) =\
             model_fitter.fit_data(k_model_instance,
-                                  subject_data,
-                                  output_name,
-                                  l2_lambda=l2_regularization,
-                                  weight_col='Steps in Condition')
+                                    subject_data,
+                                    output_name,
+                                    l2_lambda=l2_regularization,
+                                    weight_col='Steps in Condition')
         
         #If there is nan values is because there was a problem with least 
         # squares. Therefore throw an error
@@ -96,12 +116,21 @@ for output_name in output_list:
             raise ValueError
         
         #Calculate residual variance
-        subject_model = fitted_model.SimpleFitModel(basis_list, model_fit, output_name)
-        #Get the expected output
-      
+        subject_model = fitted_model.SimpleFitModel(basis_list, 
+                                                    model_fit, output_name)
         
         #Store the results in the list
-        model_fits.append(model_fit)
+        simple_fitted_model_list.append(subject_model)
+        
+    #Once all the models are calculated, we can return the model fit object
+    model = personal_measurement_function.PersonalMeasurementFunction(
+        simple_fitted_model_list,output_list, subject)
+    
+    #Initialize the measurement model
+    measurement_model = MeasurementModel(model, 
+                                         calculate_output_derivative=True)
+    
+    return measurement_model
 
     
     

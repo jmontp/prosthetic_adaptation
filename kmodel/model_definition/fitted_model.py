@@ -177,12 +177,9 @@ class PersonalKModel(FitModel):
         """
         self.pmap = new_pmap
 
-    def get_kronecker_output(self,input_data):
-        return self.model.evaluate(input_data)
-
 
     def evaluate(self, input_data:np.ndarray, 
-                       eval_cond=None, 
+                       eval_cond=2, 
                        kronecker_output=None) -> np.ndarray:
         """
         Evaluate a Kronecker Model multiplied by
@@ -229,10 +226,6 @@ class PersonalKModel(FitModel):
         if kronecker_output is None:
             kronecker_output = self.model.evaluate(input_data)
 
-        #Default behaviour, use the gait fingerprints from the dataset
-        #The gait fingeprints will be after the model variables
-        gait_fingerprints = input_data[:, self.num_models:]
-
         #Get the gait_fingerprints
         if(eval_cond == self.EVAL_GF_FIT):
 
@@ -262,7 +255,11 @@ class PersonalKModel(FitModel):
         
         #Use the gait fingerprint in the input data
         else:
-
+            
+            #Default behaviour, use the gait fingerprints from the dataset
+            #The gait fingeprints will be after the model variables
+            gait_fingerprints = input_data[:, self.num_models:]
+            
             #Use the gait fingerprint with the personalization map
             model_fit_vector = self.average_fit + \
                                  gait_fingerprints @ self.pmap

@@ -24,11 +24,13 @@ l2_regularization = 0.0
 
 # Define the output of the joint angles
 output_list = [#'jointmoment_hip_x','jointmoment_knee_x','jointmoment_ankle_x',
-               'jointangles_thigh_x', 'jointangles_shank_x','jointangles_foot_x']
+               'jointangles_ankle_x', 'jointangles_knee_x','jointangles_hip_x']
 
 
 ## Defines the model and which states will be used
 states = ['phase', 'phase_dot', 'stride_length', 'ramp']
+extra_info = ['Steps in Condition']
+
 
 phase_basis = FourierBasis(20, 'phase')
 phase_dot_basis = PolynomialBasis(2,'phase_dot')
@@ -78,6 +80,9 @@ for output_name in output_list:
 
     
     for subject_name, subject_data in subject_data_list:
+        
+        #Filter for NaNs in data
+        subject_data = subject_data[output_list + states + extra_info].dropna()
         
         #Get the model fit for the subject
         model_fit, (residual,RTR,num_datapoints) =\
